@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  background-color: #F7F9F7;
+  color: #172033;
+}
+
+/* Custom styles for mobile-first experience */
+.mobile-container {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #F7F9F7;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+/* Scrollbar-none to hide browser scrollbars while keeping touch-swipe active */
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+}
+.scrollbar-none {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}
+
+/* Tactile scale active feedback for mobile buttons */
+button:active,
+[role="button"]:active,
+.btn-tap-feedback:active {
+  transform: scale(0.97) !important;
+  opacity: 0.9 !important;
+}
+
+/* Smooth transition for active scales */
+button,
+[role="button"],
+.btn-tap-feedback {
+  transition: transform 0.1s ease-out, opacity 0.1s ease-out, background-color 0.15s ease, border-color 0.15s ease;
+}
+
