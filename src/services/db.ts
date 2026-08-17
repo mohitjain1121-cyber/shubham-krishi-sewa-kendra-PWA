@@ -1734,6 +1734,247 @@ export const dbService = {
     return { success: true, user };
   },
 
+  // --- OFFLINE BULK UPLOAD FALLBACK ---
+  localBulkUploadProducts(csvText: string, zipFilesMap: Record<string, Blob>): {
+    success: boolean;
+    productsCreated: number;
+    productsUpdated: number;
+    variantsCreated: number;
+    variantsUpdated: number;
+    imagesImported: number;
+    errors: string[];
+  } {
+    const valRes = this.validateBulkUpload(csvText, zipFilesMap);
+    if (!valRes.success || valRes.summary.errors > 0) {
+      return {
+        success: false,
+        productsCreated: 0,
+        productsUpdated: 0,
+        variantsCreated: 0,
+        variantsUpdated: 0,
+        imagesImported: 0,
+        errors: ["Validation failed. Inspect details."]
+      };
+    }
+
+    const localCompanies = JSON.parse(localStorage.getItem('ad_companies') || '[]');
+    const localProducts = JSON.parse(localStorage.getItem('ad_products') || '[]');
+    const localVariants = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
+
+    let productsCreated = 0;
+    let productsUpdated = 0;
+    let variantsCreated = 0;
+    let variantsUpdated = 0;
+    let imagesImported = 0;
+
+    for (const row of valRes.rows) {
+      if (row.validationStatus === 'ERROR') continue;
+
+      // 1. Resolve Company
+      let comp = localCompanies.find((c: any) => c.name.toLowerCase().trim() === row.companyName.toLowerCase().trim());
+      if (!comp) {
+        comp = {
+          id: `comp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          name: row.companyName,
+          logo: getCompanyPlaceholderLogo(row.companyName),
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        localCompanies.push(comp);
+      }
+
+      // 2. Resolve Product
+      let prod = localProducts.find((p: any) => 
+        p.name.toLowerCase().trim() === row.productName.toLowerCase().trim() && 
+        p.brand.toLowerCase().trim() === row.companyName.toLowerCase().trim()
+      );
+      let productWasCreated = false;
+      if (!prod) {
+        prod = {
+          id: `prod-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          name: row.productName,
+          brand: row.companyName,
+          companyId: comp.id,
+          category: row.category || 'others',
+          description: row.details.includes('Ready') ? '' : row.details,
+          techSpecs: '',
+          imageUrl: row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : '',
+          archived: false
+        };
+        localProducts.push(prod);
+        productsCreated++;
+        productWasCreated = true;
+      }
+
+      // 3. Save Image
+      if (row.imageFile && zipFilesMap[row.imageFile.trim().toLowerCase()]) {
+        const blob = zipFilesMap[row.imageFile.trim().toLowerCase()];
+        ImageStorageService.saveImage(row.imageFile, blob);
+        imagesImported++;
+      }
+
+      // 4. Resolve Variant & Price
+      const existingVar = localVariants.find((v: any) => v.sku.toLowerCase().trim() === row.sku.toLowerCase().trim());
+      if (existingVar) {
+        existingVar.productId = prod.id;
+        existingVar.packSize = row.packSize;
+        existingVar.unit = row.unit;
+        existingVar.price = Number(row.price);
+        existingVar.available = row.status.toLowerCase() === 'active';
+        if (row.imageFile) existingVar.imageUrl = row.imageFile;
+        variantsUpdated++;
+        if (!productWasCreated) productsUpdated++;
+      } else {
+        localVariants.push({
+          id: `var-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          productId: prod.id,
+          sku: row.sku,
+          packSize: row.packSize,
+          unit: row.unit,
+          price: Number(row.price),
+          available: row.status.toLowerCase() === 'active',
+          archived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        variantsCreated++;
+      }
+    }
+
+    localStorage.setItem('ad_companies', JSON.stringify(localCompanies));
+    localStorage.setItem('ad_products', JSON.stringify(localProducts));
+    localStorage.setItem('ad_product_variants', JSON.stringify(localVariants));
+
+    return {
+      success: true,
+      productsCreated,
+      productsUpdated,
+      variantsCreated,
+      variantsUpdated,
+      imagesImported,
+      errors: []
+    };
+  },
+
+  // --- CATALOGUE MIGRATION TO SUPABASE Central ---
+  async migrateLocalCatalogueToSupabase(): Promise<{ success: boolean; count: number; error?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, count: 0, error: "Supabase is not configured." };
+    }
+
+    try {
+      // 1. Read existing local data
+      let localCompanies = JSON.parse(localStorage.getItem('ad_companies') || '[]');
+      let localProducts = JSON.parse(localStorage.getItem('ad_products') || '[]');
+      let localVariants = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
+
+      // If localStorage is empty, fallback to source defaults
+      if (localCompanies.length === 0) localCompanies = DEFAULT_COMPANIES;
+      if (localProducts.length === 0) localProducts = DEFAULT_PRODUCTS;
+      if (localVariants.length === 0) localVariants = DEFAULT_PRODUCT_VARIANTS;
+
+      console.log(`[Migration] Starting local catalogue migration: ${localProducts.length} products, ${localVariants.length} variants`);
+
+      // 2. Upsert Companies
+      const companyUpserts = localCompanies.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        logo: c.logo || getCompanyPlaceholderLogo(c.name),
+        status: c.status === 'active' || c.status === 'inactive' ? c.status : 'active'
+      }));
+      
+      const { error: compErr } = await supabase.from('companies').upsert(companyUpserts, { onConflict: 'name' });
+      if (compErr) throw new Error("Companies upsert failed: " + compErr.message);
+
+      // Re-fetch companies from Supabase to get correct IDs
+      const { data: dbCompanies } = await supabase.from('companies').select('*');
+      const dbCompanyMap = new Map<string, string>(); // name -> id
+      if (dbCompanies) {
+        dbCompanies.forEach(c => dbCompanyMap.set(c.name.toLowerCase().trim(), c.id));
+      }
+
+      // 3. Upsert Products
+      const productUpserts = localProducts.map((p: any) => {
+        const brandName = p.brand || "";
+        const companyId = dbCompanyMap.get(brandName.toLowerCase().trim()) || p.companyId || p.company_id || null;
+        return {
+          id: p.id,
+          company_id: companyId,
+          name: p.name,
+          brand: brandName,
+          category: p.category || 'others',
+          description: p.description || '',
+          tech_specs: p.techSpecs || p.tech_specs || '',
+          image_url: p.imageUrl || p.image_url || '',
+          archived: p.archived === true
+        };
+      }).filter((p: any) => p.company_id !== null);
+
+      const { error: prodErr } = await supabase.from('products').upsert(productUpserts, { onConflict: 'company_id,name' });
+      if (prodErr) throw new Error("Products upsert failed: " + prodErr.message);
+
+      // Re-fetch products to get correct IDs mapping
+      const { data: dbProducts } = await supabase.from('products').select('*');
+      const dbProductMap = new Map<string, string>(); // "companyId||name" -> id
+      if (dbProducts) {
+        dbProducts.forEach(p => dbProductMap.set(`${p.company_id}||${p.name.toLowerCase().trim()}`, p.id));
+      }
+
+      // 4. Upsert Variants & Base Prices
+      const variantUpserts = [];
+      const basePriceUpserts = [];
+
+      for (const v of localVariants) {
+        // Find local parent product name
+        const localProd = localProducts.find((p: any) => p.id === (v.productId || v.product_id));
+        if (localProd) {
+          const brandName = localProd.brand || "";
+          const companyId = dbCompanyMap.get(brandName.toLowerCase().trim()) || localProd.companyId || localProd.company_id;
+          const productId = dbProductMap.get(`${companyId}||${localProd.name.toLowerCase().trim()}`);
+          
+          if (productId) {
+            variantUpserts.push({
+              id: v.id,
+              product_id: productId,
+              sku: v.sku,
+              pack_size: Number(v.packSize || v.pack_size),
+              unit: v.unit,
+              available: v.available !== false,
+              archived: v.archived === true,
+              image_url: v.imageUrl || v.image_url || null
+            });
+
+            basePriceUpserts.push({
+              variant_id: v.id,
+              price: Number(v.price)
+            });
+          }
+        }
+      }
+
+      if (variantUpserts.length > 0) {
+        const { error: varErr } = await supabase.from('product_variants').upsert(variantUpserts, { onConflict: 'sku' });
+        if (varErr) throw new Error("Variants upsert failed: " + varErr.message);
+      }
+
+      if (basePriceUpserts.length > 0) {
+        const { error: priceErr } = await supabase.from('variant_base_prices').upsert(basePriceUpserts, { onConflict: 'variant_id' });
+        if (priceErr) throw new Error("Base prices upsert failed: " + priceErr.message);
+      }
+
+      console.log(`[Migration] Catalogue successfully migrated to Supabase: ${productUpserts.length} products, ${variantUpserts.length} variants`);
+      
+      // Sync cache
+      await this.syncFromSupabase();
+
+      return { success: true, count: productUpserts.length };
+    } catch (err: any) {
+      console.error("[Migration] Catalogue migration failed:", err);
+      return { success: false, count: 0, error: err.message };
+    }
+  },
+
   // --- SYNC ROUTINE ---
   async syncFromSupabase(): Promise<void> {
     if (!isSupabaseConfigured()) {
@@ -1748,6 +1989,17 @@ export const dbService = {
       const { data: companies } = await supabase.from('companies').select('*');
       const { data: products } = await supabase.from('products').select('*');
       const { data: settings } = await supabase.from('system_settings').select('*');
+
+      // Auto-migrate if Supabase catalogue is completely empty but configured
+      if (products && products.length === 0) {
+        console.log("[Sync] Supabase catalogue is empty. Auto-migrating local catalogue...");
+        const migRes = await this.migrateLocalCatalogueToSupabase();
+        if (migRes.success) {
+          // Re-fetch now that it is migrated
+          await this.syncFromSupabase();
+          return;
+        }
+      }
 
       // Fetch base product variants (secure from guest pricing)
       const { data: rawVariants } = await supabase.from('product_variants').select('*');
@@ -2471,6 +2723,11 @@ export const dbService = {
     imagesImported: number;
     errors: string[];
   }> {
+    if (!isSupabaseConfigured()) {
+      console.warn("[BulkUpload] Supabase is unconfigured. Performing local catalogue upload.");
+      return Promise.resolve(this.localBulkUploadProducts(csvText, zipFilesMap));
+    }
+
     try {
       const valRes = this.validateBulkUpload(csvText, zipFilesMap);
       if (!valRes.success || valRes.summary.errors > 0) {

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { dbService } from '../services/db';
 import type { Product, Company } from '../services/db';
-import { Search, Plus, Archive, RefreshCcw, Edit2, FileUp, X, Download, CheckCircle2, ChevronRight, AlertTriangle, FileText } from 'lucide-react';
+import { Search, Plus, Archive, RefreshCcw, Edit2, FileUp, X, Download, CheckCircle2, ChevronRight, AlertTriangle, FileText, Database } from 'lucide-react';
 import { SafeImage } from '../components/SafeImage';
 import JSZip from 'jszip';
 
 export const AdminProducts: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [migrating, setMigrating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
   // Filter states
@@ -223,6 +224,26 @@ export const AdminProducts: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const handleMigrateToSupabase = async () => {
+    if (!window.confirm("Are you sure you want to migrate your local cache / defaults catalog to Supabase? This will upsert all products, variants, and base prices safely.")) {
+      return;
+    }
+    setMigrating(true);
+    try {
+      const res = await dbService.migrateLocalCatalogueToSupabase();
+      if (res.success) {
+        alert(`Successfully migrated ${res.count} products and variants to Supabase central database!`);
+        loadProducts();
+      } else {
+        alert("Migration failed: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error during migration: " + err.message);
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   const handleCsvFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -412,7 +433,16 @@ export const AdminProducts: React.FC = () => {
             <Download className="w-4 h-4 text-slate-500" />
             <span className="hidden sm:inline">CSV Template</span>
           </button>
-
+          {/* Migrate Cache to Supabase button */}
+          <button
+            onClick={handleMigrateToSupabase}
+            disabled={migrating}
+            className="bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 border border-slate-200 transition disabled:opacity-50"
+            title="Migrate local cache or defaults catalog to Supabase database"
+          >
+            <Database className="w-4 h-4 text-indigo-600" />
+            <span>{migrating ? 'Migrating...' : 'Migrate to Supabase'}</span>
+          </button>
           {/* Bulk Upload button */}
           <button
             onClick={() => setIsBulkOpen(true)}
