@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { dbService } from '../services/db';
+import { supabase } from '../config/supabase';
 import { User, Store, Smartphone, Mail, MapPin, Percent, LogOut, Edit, Check, X } from 'lucide-react';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 
@@ -23,35 +24,37 @@ export const Profile: React.FC = () => {
     return null;
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name || !shopName || !mobile || !address) {
       setError("Please fill in all required fields");
       return;
     }
 
     setError(null);
-    const dealers = dbService.getDealers();
-    const idx = dealers.findIndex((d: any) => d.id === user.id);
-    
-    if (idx !== -1) {
-      const updatedDealer = {
-        ...dealers[idx],
-        name,
-        shopName,
-        mobile,
-        email,
-        address,
-        gstNumber
-      };
-      dealers[idx] = updatedDealer;
-      localStorage.setItem('ad_dealers', JSON.stringify(dealers));
-      localStorage.setItem('ad_session', JSON.stringify(updatedDealer));
-      
-      // Reload session in context by calling simulated login with new values
-      dbService.login(updatedDealer.mobile); // updates active session in storage
-      window.location.reload(); // Quick refresh to reload all contexts nicely
-    } else {
-      setError("Failed to update profile. Dealer record not found.");
+    try {
+      // Update dealer profile in Supabase database
+      const { error: updateErr } = await supabase
+        .from('profiles')
+        .update({
+          name,
+          shop_name: shopName,
+          mobile,
+          email,
+          address,
+          gst_number: gstNumber
+        })
+        .eq('id', user.id);
+
+      if (updateErr) {
+        setError("Failed to update profile in database: " + updateErr.message);
+        return;
+      }
+
+      // Reload session in context by calling login with new values
+      await dbService.login(mobile); 
+      window.location.reload(); 
+    } catch (err: any) {
+      setError("Failed to update profile: " + (err?.message || err));
     }
   };
 

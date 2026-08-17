@@ -122,7 +122,7 @@ export const AdminOrders: React.FC = () => {
     setIsConfirmModalOpen(true);
   };
 
-  const handleFinalConfirmOrder = () => {
+  const handleFinalConfirmOrder = async () => {
     if (!selectedOrder || !selectedOrder.items) return;
     
     const itemsPayload = selectedOrder.items.map(item => {
@@ -136,7 +136,7 @@ export const AdminOrders: React.FC = () => {
       };
     });
 
-    const res = dbService.confirmOrderItems(selectedOrder.id, itemsPayload);
+    const res = await dbService.confirmOrderItems(selectedOrder.id, itemsPayload);
     if (res.success) {
       setIsConfirmModalOpen(false);
       setSuccessMsg("Order items processed and status finalized successfully!");
@@ -267,7 +267,7 @@ export const AdminOrders: React.FC = () => {
     setSuccessMsg(null);
   };
 
-  const handleUpdateStatus = () => {
+  const handleUpdateStatus = async () => {
     if (!selectedOrder) return;
     if (orderStatus === 'dispatched') {
       const existing = dbService.getDeliveryChallanByOrderId(selectedOrder.id);
@@ -285,7 +285,7 @@ export const AdminOrders: React.FC = () => {
         return;
       }
     }
-    const res = dbService.updateOrderStatus(selectedOrder.id, orderStatus, paymentStatus);
+    const res = await dbService.updateOrderStatus(selectedOrder.id, orderStatus, paymentStatus);
     if (res.success) {
       setSuccessMsg("Order status updated successfully.");
       const loaded = loadOrders();
@@ -298,9 +298,9 @@ export const AdminOrders: React.FC = () => {
     }
   };
 
-  const handleConfirmDispatch = () => {
+  const handleConfirmDispatch = async () => {
     if (!selectedOrder) return;
-    const challan = dbService.createDeliveryChallan(
+    const challan = await dbService.createDeliveryChallan(
       selectedOrder.id,
       {
         transportThrough,

@@ -123,7 +123,7 @@ export const AdminProducts: React.FC = () => {
     setIsFormOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !companyId || !category) {
       alert("Please fill in all required fields marked with *");
@@ -154,7 +154,7 @@ export const AdminProducts: React.FC = () => {
     };
 
     if (editProduct) {
-      const res = dbService.updateProduct({
+      const res = await dbService.updateProduct({
         ...productData,
         id: editProduct.id,
         archived: editProduct.archived
@@ -168,7 +168,7 @@ export const AdminProducts: React.FC = () => {
         }, 1500);
       }
     } else {
-      const res = dbService.addProduct(productData as any);
+      const res = await dbService.addProduct(productData as any);
       if (res.success) {
         setSuccessBanner("Product added successfully.");
         loadProducts();
@@ -180,28 +180,28 @@ export const AdminProducts: React.FC = () => {
     }
   };
 
-  const handleToggleAvailable = (prod: Product) => {
+  const handleToggleAvailable = async (prod: Product) => {
     if (!prod.variants || prod.variants.length === 0) return;
     const updatedVariants = prod.variants.map((v, idx) =>
       idx === 0 ? { ...v, available: !v.available } : v
     );
-    const res = dbService.updateProduct({
+    const res = await dbService.updateProduct({
       ...prod,
       variants: updatedVariants
     } as any);
     if (res.success) loadProducts();
   };
 
-  const handleArchive = (prod: Product) => {
+  const handleArchive = async (prod: Product) => {
     const confirm = window.confirm(`Archive this product?\n\n"${prod.name}" will no longer appear in the active dealer catalog. Historical orders remain intact.`);
     if (confirm) {
-      const res = dbService.archiveProduct(prod.id);
+      const res = await dbService.archiveProduct(prod.id);
       if (res.success) loadProducts();
     }
   };
 
-  const handleRestore = (id: string) => {
-    const res = dbService.restoreProduct(id);
+  const handleRestore = async (id: string) => {
+    const res = await dbService.restoreProduct(id);
     if (res.success) loadProducts();
   };
 

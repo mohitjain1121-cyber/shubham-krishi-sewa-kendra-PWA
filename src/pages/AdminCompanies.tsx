@@ -89,7 +89,7 @@ export const AdminCompanies: React.FC = () => {
     setLogo('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       alert("Company Name is required.");
@@ -115,7 +115,7 @@ export const AdminCompanies: React.FC = () => {
     };
 
     if (editCompany) {
-      const res = dbService.updateCompany({
+      const res = await dbService.updateCompany({
         ...companyData,
         id: editCompany.id,
         createdAt: editCompany.createdAt,
@@ -132,7 +132,7 @@ export const AdminCompanies: React.FC = () => {
         alert(res.error || "Failed to update company.");
       }
     } else {
-      const res = dbService.addCompany(companyData);
+      const res = await dbService.addCompany(companyData);
       if (res.success) {
         setSuccessBanner("Company created successfully.");
         loadData();
@@ -146,7 +146,7 @@ export const AdminCompanies: React.FC = () => {
     }
   };
 
-  const toggleStatus = (comp: Company) => {
+  const toggleStatus = async (comp: Company) => {
     const newStatus = comp.status === 'active' ? 'inactive' : 'active';
     const message = newStatus === 'inactive' 
       ? `Deactivate "${comp.name}"?\n\nThis company will disappear from the Dealer PWA, but associated products and historical orders will remain untouched.`
@@ -158,14 +158,14 @@ export const AdminCompanies: React.FC = () => {
         status: newStatus,
         updatedAt: new Date().toISOString()
       };
-      const res = dbService.updateCompany(updated);
+      const res = await dbService.updateCompany(updated);
       if (res.success) {
         loadData();
       }
     }
   };
 
-  const handleDelete = (comp: Company) => {
+  const handleDelete = async (comp: Company) => {
     const productCount = getProductCount(comp.id);
     if (productCount > 0) {
       alert(`This company has ${productCount} products associated with it. Please deactivate the company instead of deleting it to preserve system references.`);
@@ -173,7 +173,7 @@ export const AdminCompanies: React.FC = () => {
     }
 
     if (window.confirm(`Are you sure you want to permanently delete the company "${comp.name}"? This action cannot be undone.`)) {
-      const res = dbService.deleteCompany(comp.id);
+      const res = await dbService.deleteCompany(comp.id);
       if (res.success) {
         loadData();
       } else {
@@ -183,9 +183,9 @@ export const AdminCompanies: React.FC = () => {
   };
 
   // Migration resolution handlers
-  const handleCreateMigration = (brand: string) => {
+  const handleCreateMigration = async (brand: string) => {
     if (window.confirm(`Create "${brand}" as an active company in the database?`)) {
-      const res = dbService.resolveMigration(brand, 'create');
+      const res = await dbService.resolveMigration(brand, 'create');
       if (res.success) {
         loadData();
       } else {
@@ -194,7 +194,7 @@ export const AdminCompanies: React.FC = () => {
     }
   };
 
-  const handleMapMigration = (brand: string) => {
+  const handleMapMigration = async (brand: string) => {
     const targetId = mappingTargets[brand];
     if (!targetId) {
       alert("Please select a target company to map to.");
@@ -204,7 +204,7 @@ export const AdminCompanies: React.FC = () => {
     if (!targetComp) return;
 
     if (window.confirm(`Merge all products of "${brand}" into "${targetComp.name}"? The temporary brand "${brand}" will be removed.`)) {
-      const res = dbService.resolveMigration(brand, 'map', targetId);
+      const res = await dbService.resolveMigration(brand, 'map', targetId);
       if (res.success) {
         loadData();
         // Clear selection target

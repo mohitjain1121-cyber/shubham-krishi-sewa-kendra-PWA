@@ -54,14 +54,14 @@ export const AdminSettings: React.FC = () => {
     setUpiQrCode('');
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!allowPayNow && !allowPayLater) {
       alert("Please enable at least one payment method (Pay Now or Pay Later) so dealers can checkout.");
       return;
     }
 
-    dbService.updateSettings({
+    await dbService.updateSettings({
       upiId,
       upiName,
       companyName,

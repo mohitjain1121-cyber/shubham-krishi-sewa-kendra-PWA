@@ -42,9 +42,9 @@ interface AppContextType {
   settings: SystemSettings;
   
   // Auth actions
-  login: (loginVal: string, passwordVal?: string) => { success: boolean; error?: string };
-  register: (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>) => { success: boolean; error?: string };
-  logout: () => void;
+  login: (loginVal: string, passwordVal?: string) => Promise<{ success: boolean; error?: string }>;
+  register: (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
   
   // Navigation actions
   setView: (view: ViewType) => void;
@@ -59,7 +59,8 @@ interface AppContextType {
   clearCart: () => void;
   
   // Order actions
-  placeOrder: (paymentMethod: 'pay_now' | 'pay_later') => { success: boolean; order?: Order; error?: string };
+  placeOrder: (paymentMethod: 'pay_now' | 'pay_later') => Promise<{ success: boolean; order?: Order; error?: string }>;
+
   repeatOrder: (order: Order) => { success: boolean; addedCount: number; unavailableCount: number };
   
   // State search queries
@@ -86,25 +87,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState<string>('');
   const [settings, setSettings] = useState<SystemSettings>(dbService.getSettings());
 
-  // Check active session on startup
+  // Check active session on startup and sync database
   useEffect(() => {
-    const session = dbService.getCurrentSession();
-    if (session) {
-      setUser(session);
-      // Wait for splash before redirecting
-      setTimeout(() => {
-        if (session.role === 'admin') {
-          setViewInternal('admin_dashboard');
-        } else {
+    const initAndSync = async () => {
+      await dbService.syncFromSupabase();
+      const session = dbService.getCurrentSession();
+      if (session) {
+        setUser(session);
+        // Wait for splash before redirecting
+        setTimeout(() => {
+          if (session.role === 'admin') {
+            setViewInternal('admin_dashboard');
+          } else {
+            setViewInternal('catalog');
+          }
+        }, 2000);
+      } else {
+        setTimeout(() => {
           setViewInternal('catalog');
-        }
-      }, 2000);
-    } else {
-      setTimeout(() => {
-        setViewInternal('catalog');
-      }, 2500);
-    }
+        }, 2500);
+      }
+    };
+    initAndSync();
   }, []);
+
 
   const setView = (view: ViewType) => {
     // Reset view specific filters if changing tabs
@@ -129,8 +135,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (id) setViewInternal('company_details');
   };
 
-  const login = (loginVal: string, passwordVal?: string) => {
-    const res = dbService.login(loginVal, passwordVal);
+  const login = async (loginVal: string, passwordVal?: string) => {
+    const res = await dbService.login(loginVal, passwordVal);
     if (res.success && res.user) {
       setUser(res.user);
       setCart([]); // Clear guest cart if logging in
@@ -143,8 +149,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: res.success, error: res.error };
   };
 
-  const register = (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>) => {
-    const res = dbService.register(dealerData);
+  const register = async (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>) => {
+    const res = await dbService.register(dealerData);
     if (res.success && res.user) {
       setUser(res.user);
       setCart([]);
@@ -153,12 +159,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: res.success, error: res.error };
   };
 
-  const logout = () => {
-    dbService.logout();
+  const logout = async () => {
+    await dbService.logout();
     setUser(null);
     setCart([]);
     setViewInternal('catalog');
   };
+
 
   // Cart Management
   const addToCart = (product: Product, variant: ProductVariant, quantity: number) => {
@@ -202,7 +209,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Order Placement
-  const placeOrder = (paymentMethod: 'pay_now' | 'pay_later') => {
+  const placeOrder = async (paymentMethod: 'pay_now' | 'pay_later') => {
     if (!user) {
       return { success: false, error: "Please log in to place an order" };
     }
@@ -214,7 +221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const subtotal = cart.reduce((sum, item) => sum + (item.variant.price * item.quantity), 0);
     const total = subtotal; // No taxes/shipping in Phase 1
     
-    const res = dbService.createOrder({
+    const res = await dbService.createOrder({
       dealerId: user.id,
       dealerName: user.name,
       shopName: user.shopName,
@@ -231,6 +238,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     return { success: res.success, order: res.order, error: res.error };
   };
+
 
   // Repeat Order
   const repeatOrder = (order: Order) => {

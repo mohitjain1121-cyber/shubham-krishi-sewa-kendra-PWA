@@ -18,7 +18,7 @@ export const Checkout: React.FC = () => {
     return cart.reduce((sum, item) => sum + item.variant.price * item.quantity, 0);
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (paymentMethod === 'pay_now' && !hasPaidConfirmation) {
       setError("Please confirm that you have scanned and paid the amount via UPI");
       return;
@@ -27,14 +27,16 @@ export const Checkout: React.FC = () => {
     setError(null);
     setIsPlacingOrder(true);
 
-    // Simulate order processing delay
-    setTimeout(() => {
-      const res = placeOrder(paymentMethod);
+    try {
+      const res = await placeOrder(paymentMethod);
       setIsPlacingOrder(false);
       if (!res.success) {
         setError(res.error || "Failed to place order. Please try again.");
       }
-    }, 1000);
+    } catch (err: any) {
+      setIsPlacingOrder(false);
+      setError(err?.message || "Failed to place order. Please try again.");
+    }
   };
 
   if (!user) {

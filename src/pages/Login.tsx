@@ -30,14 +30,16 @@ export const Login: React.FC = () => {
     setError(null);
     setLoading(true);
     
-    // Simulate slight network delay
-    setTimeout(() => {
-      const res = login(loginVal, password);
+    try {
+      const res = await login(loginVal, password);
       setLoading(false);
       if (!res.success) {
         setError(res.error || "Login failed");
       }
-    }, 600);
+    } catch (err: any) {
+      setLoading(false);
+      setError(err?.message || "An unexpected error occurred during login");
+    }
   };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -55,8 +57,8 @@ export const Login: React.FC = () => {
     setError(null);
     setLoading(true);
 
-    setTimeout(() => {
-      const res = register({
+    try {
+      const res = await register({
         name: regName,
         shopName: regShopName,
         mobile: regMobile,
@@ -68,7 +70,10 @@ export const Login: React.FC = () => {
       if (!res.success) {
         setError(res.error || "Registration failed");
       }
-    }, 600);
+    } catch (err: any) {
+      setLoading(false);
+      setError(err?.message || "An unexpected error occurred during registration");
+    }
   };
 
   // Quick autofills for testing

@@ -1,5 +1,7 @@
 // Simulated Database Layer (localStorage persistence) for Shubham Krishi Sewa Kendra PWA
 import { BUSINESS_CONFIG, BUSINESS_INFO } from '../config/business';
+import { supabase } from '../config/supabase';
+
 
 // Normalization helpers for consistent bulk upload matches
 export const normalizeProductName = (name: string): string => {
@@ -1660,77 +1662,174 @@ initLocalStorage();
 
 // Database Service Functions
 export const dbService = {
+  // --- SYNC ROUTINE ---
+  async syncFromSupabase(): Promise<void> {
+    try {
+      const sessionUser = this.getCurrentSession();
+      
+      // Pull public data (available to anyone including anon/guests)
+      const { data: companies } = await supabase.from('companies').select('*');
+      const { data: products } = await supabase.from('products').select('*');
+      const { data: variants } = await supabase.from('product_variants').select('*');
+      const { data: settings } = await supabase.from('system_settings').select('*');
+
+      if (companies) localStorage.setItem('ad_companies', JSON.stringify(companies));
+      if (products) localStorage.setItem('ad_products', JSON.stringify(products));
+      if (variants) localStorage.setItem('ad_product_variants', JSON.stringify(variants));
+      if (settings && settings[0]) localStorage.setItem('ad_settings', JSON.stringify(settings[0]));
+
+      if (sessionUser) {
+        // Authenticated data queries
+        const { data: orders } = await supabase.from('orders').select('*');
+        const { data: orderItems } = await supabase.from('order_items').select('*');
+        const { data: challans } = await supabase.from('delivery_challans').select('*');
+        const { data: prices } = await supabase.from('dealer_prices').select('*');
+
+        if (orders) localStorage.setItem('ad_orders', JSON.stringify(orders));
+        if (orderItems) localStorage.setItem('ad_order_items', JSON.stringify(orderItems));
+        if (challans) localStorage.setItem('ad_delivery_challans', JSON.stringify(challans));
+        if (prices) localStorage.setItem('ad_dealer_prices', JSON.stringify(prices));
+
+        if (sessionUser.role === 'admin') {
+          const { data: dealers } = await supabase.from('profiles').select('*').eq('role', 'dealer');
+          if (dealers) localStorage.setItem('ad_dealers', JSON.stringify(dealers));
+        }
+      }
+      console.log('[Sync] Local storage synchronized successfully with Supabase');
+    } catch (error) {
+      console.warn('[Sync] Sync connection deferred (running offline):', error);
+    }
+  },
+
   // --- AUTHENTICATION ---
-  login(loginVal: string, passwordVal?: string): { success: boolean; user?: UserProfile; error?: string } {
+  async login(loginVal: string, passwordVal?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     initLocalStorage();
     const cleanLogin = loginVal.trim().toLowerCase();
     
-    // 1. Check if admin
-    const admins = JSON.parse(localStorage.getItem('ad_admins') || '[]');
-    const adminMatch = admins.find((a: any) => a.email.toLowerCase() === cleanLogin || a.mobile === cleanLogin);
-    if (adminMatch) {
-      if (passwordVal === adminMatch.password) {
-        const user: UserProfile = {
-          id: adminMatch.id,
-          role: 'admin',
-          name: adminMatch.name,
-          shopName: `${BUSINESS_CONFIG.shortName} Corporate`,
-          mobile: adminMatch.mobile,
-          email: adminMatch.email,
-          address: 'Corporate Headquarters',
-          gstNumber: 'CorporateGST',
-          createdAt: new Date().toISOString()
-        };
-        localStorage.setItem('ad_session', JSON.stringify(user));
-        return { success: true, user };
-      } else {
-        return { success: false, error: "Incorrect password for admin account" };
+    // Check if email or mobile
+    const isEmail = cleanLogin.includes('@');
+    let emailToSignIn = cleanLogin;
+    
+    if (!isEmail) {
+      // Mobile login lookup via public RPC
+      const { data: foundEmail, error: rpcError } = await supabase.rpc('get_email_by_mobile', { mobile_number: cleanLogin });
+      if (rpcError || !foundEmail) {
+        return { success: false, error: "Dealer account not found. Please register first." };
       }
+      emailToSignIn = foundEmail;
     }
-    
-    // 2. Check if dealer
-    const dealers = JSON.parse(localStorage.getItem('ad_dealers') || '[]');
-    // For dealers, login is passwordless/OTP-based or simple passwordless.
-    // Spec says: "Mobile number / email according to chosen authentication architecture. Login / Register".
-    // We will implement simple mobile/email based passwordless immediate login (or simple password, but mobile number immediate login is extremely user friendly and robust).
-    // Let's allow instant login with mobile/email. If password is provided, we can validate or skip. Let's do instant activation / login.
-    const dealerMatch = dealers.find((d: UserProfile) => d.email.toLowerCase() === cleanLogin || d.mobile === cleanLogin);
-    if (dealerMatch) {
-      localStorage.setItem('ad_session', JSON.stringify(dealerMatch));
-      return { success: true, user: dealerMatch };
+
+    // Determine password
+    let passwordToUse = passwordVal || '';
+    if (!passwordVal) {
+      // Deterministic derived password for passwordless experience
+      passwordToUse = emailToSignIn + '_sksk_pwa_secret_2026';
     }
+
+    // Call Supabase auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: emailToSignIn,
+      password: passwordToUse
+    });
+
+    if (authError) {
+      return { success: false, error: authError.message };
+    }
+
+    // Fetch profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      return { success: false, error: 'Failed to load user profile: ' + (profileError?.message || 'Profile not found') };
+    }
+
+    const user: UserProfile = {
+      id: profile.id,
+      role: profile.role,
+      name: profile.name,
+      shopName: profile.shop_name || '',
+      mobile: profile.mobile,
+      email: profile.email,
+      address: profile.address || '',
+      gstNumber: profile.gst_number || '',
+      createdAt: profile.created_at
+    };
+
+    localStorage.setItem('ad_session', JSON.stringify(user));
     
-    return { success: false, error: "Dealer account not found. Please register first." };
+    // Sync all database tables immediately
+    await this.syncFromSupabase();
+    
+    return { success: true, user };
   },
 
-  register(dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>): { success: boolean; user?: UserProfile; error?: string } {
+  async register(dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     initLocalStorage();
-    const dealers = JSON.parse(localStorage.getItem('ad_dealers') || '[]');
     
-    // Check if mobile or email exists
-    if (dealers.some((d: UserProfile) => d.mobile === dealerData.mobile)) {
-      return { success: false, error: "Mobile number already registered" };
+    const emailToUse = dealerData.email || `${dealerData.mobile}@shubhamkrishisewa.com`;
+    const passwordToUse = emailToUse + '_sksk_pwa_secret_2026';
+
+    // Sign up in Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: emailToUse,
+      password: passwordToUse
+    });
+
+    if (authError || !authData.user) {
+      return { success: false, error: authError?.message || "Auth registration failed" };
     }
-    if (dealerData.email && dealers.some((d: UserProfile) => d.email.toLowerCase() === dealerData.email.toLowerCase())) {
-      return { success: false, error: "Email already registered" };
+
+    // Insert profile row
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: authData.user.id,
+        role: 'dealer',
+        name: dealerData.name,
+        shop_name: dealerData.shopName,
+        mobile: dealerData.mobile,
+        email: emailToUse,
+        address: dealerData.address,
+        gst_number: dealerData.gstNumber,
+        status: 'active'
+      });
+
+    if (profileError) {
+      return { success: false, error: "Profile registration failed: " + profileError.message };
     }
-    
-    const newDealer: UserProfile = {
-      ...dealerData,
-      id: `dealer-${Date.now()}`,
+
+    const user: UserProfile = {
+      id: authData.user.id,
       role: 'dealer',
+      name: dealerData.name,
+      shopName: dealerData.shopName,
+      mobile: dealerData.mobile,
+      email: emailToUse,
+      address: dealerData.address,
+      gstNumber: dealerData.gstNumber,
       createdAt: new Date().toISOString()
     };
+
+    localStorage.setItem('ad_session', JSON.stringify(user));
     
-    dealers.push(newDealer);
-    localStorage.setItem('ad_dealers', JSON.stringify(dealers));
-    localStorage.setItem('ad_session', JSON.stringify(newDealer)); // auto log-in after registration
-    
-    return { success: true, user: newDealer };
+    // Sync from Supabase immediately
+    await this.syncFromSupabase();
+
+    return { success: true, user };
   },
 
-  logout(): void {
+  async logout(): Promise<void> {
+    await supabase.auth.signOut();
     localStorage.removeItem('ad_session');
+    // Clear dynamic data in localStorage but keep catalog cache for guest browsing
+    localStorage.removeItem('ad_orders');
+    localStorage.removeItem('ad_order_items');
+    localStorage.removeItem('ad_delivery_challans');
+    localStorage.removeItem('ad_dealer_prices');
   },
 
   getCurrentSession(): UserProfile | null {
@@ -1766,802 +1865,160 @@ export const dbService = {
     });
   },
 
-  addProduct(productData: Omit<Product, 'id' | 'archived'>): { success: boolean; product?: Product; error?: string } {
-    initLocalStorage();
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const allVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-    
-    const newProductId = `prod-${Date.now()}`;
+  async addProduct(productData: Omit<Product, 'id' | 'archived'>): Promise<{ success: boolean; product?: Product; error?: string }> {
     const { variants, ...parentData } = productData as any;
-
-    const newProduct: Product = {
-      ...parentData,
-      id: newProductId,
-      archived: false
-    };
     
-    products.push(newProduct);
-    localStorage.setItem('ad_products', JSON.stringify(products));
+    // Insert parent product
+    const { data: insertedProduct, error: productError } = await supabase
+      .from('products')
+      .insert({
+        company_id: parentData.companyId || null,
+        name: parentData.name,
+        brand: parentData.brand,
+        category: parentData.category,
+        description: parentData.description,
+        tech_specs: parentData.techSpecs,
+        image_url: parentData.imageUrl || '',
+        archived: false
+      })
+      .select()
+      .single();
 
-    if (variants && Array.isArray(variants)) {
-      variants.forEach((v, idx) => {
-        const variantId = `var-${Date.now()}-${idx}`;
-        const newV: ProductVariant = {
-          id: variantId,
-          productId: newProductId,
-          packSize: v.packSize,
-          unit: v.unit || 'ml',
-          price: Number(v.price),
-          sku: v.sku || `SKU-${Date.now()}-${idx}`,
-          available: v.available !== false,
-          archived: v.archived === true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        allVariants.push(newV);
-        if (v.dealerPrices) {
-          dbService.saveDealerPricesForVariant(variantId, v.dealerPrices);
-        }
-      });
-      localStorage.setItem('ad_product_variants', JSON.stringify(allVariants));
+    if (productError || !insertedProduct) {
+      return { success: false, error: "Failed to create product: " + productError?.message };
     }
 
-    return { success: true, product: { ...newProduct, variants: allVariants.filter(v => v.productId === newProductId) } };
+    // Insert variants
+    if (variants && Array.isArray(variants)) {
+      const variantsToInsert = variants.map((v, idx) => ({
+        product_id: insertedProduct.id,
+        pack_size: Number(v.packSize),
+        unit: v.unit,
+        price: Number(v.price),
+        sku: v.sku || `SKU-${Date.now()}-${idx}`,
+        available: v.available !== false,
+        archived: v.archived === true,
+        image_url: v.imageUrl || null
+      }));
+
+      const { data: insertedVariants, error: variantError } = await supabase
+        .from('product_variants')
+        .insert(variantsToInsert)
+        .select();
+
+      if (variantError) {
+        return { success: false, error: "Product created but variants failed: " + variantError.message };
+      }
+
+      // Handle custom pricing if present
+      for (let i = 0; i < variants.length; i++) {
+        const v = variants[i];
+        if (v.dealerPrices && Object.keys(v.dealerPrices).length > 0) {
+          const matchedInserted = insertedVariants?.find(iv => iv.sku === v.sku);
+          if (matchedInserted) {
+            await this.saveDealerPricesForVariant(matchedInserted.id, v.dealerPrices);
+          }
+        }
+      }
+    }
+
+    await this.syncFromSupabase();
+    return { success: true };
   },
 
-  updateProduct(product: Product): { success: boolean; product?: Product; error?: string } {
-    initLocalStorage();
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const allVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-    const idx = products.findIndex(p => p.id === product.id);
-    
-    if (idx === -1) {
-      return { success: false, error: "Product not found" };
-    }
-    
+  async updateProduct(product: Product): Promise<{ success: boolean; error?: string }> {
     const { variants, ...parentData } = product as any;
 
-    products[idx] = {
-      ...products[idx],
-      ...parentData
-    };
-    localStorage.setItem('ad_products', JSON.stringify(products));
+    // Update parent product
+    const { error: productError } = await supabase
+      .from('products')
+      .update({
+        company_id: parentData.companyId || null,
+        name: parentData.name,
+        brand: parentData.brand,
+        category: parentData.category,
+        description: parentData.description,
+        tech_specs: parentData.techSpecs,
+        image_url: parentData.imageUrl,
+        archived: parentData.archived
+      })
+      .eq('id', product.id);
+
+    if (productError) {
+      return { success: false, error: "Failed to update product: " + productError.message };
+    }
 
     if (variants && Array.isArray(variants)) {
-      // Archive variants not in the submitted list
-      const submittedVariantIds = variants.map(v => v.id).filter(Boolean);
-      allVariants.forEach(item => {
-        if (item.productId === product.id && !submittedVariantIds.includes(item.id)) {
-          item.archived = true;
-        }
-      });
-
-      variants.forEach((v, vIdx) => {
-        if (v.id) {
-          const existingIdx = allVariants.findIndex(item => item.id === v.id);
-          if (existingIdx !== -1) {
-            allVariants[existingIdx] = {
-              ...allVariants[existingIdx],
-              packSize: v.packSize,
-              unit: v.unit || 'ml',
-              price: Number(v.price),
+      // Upsert variants
+      for (const v of variants) {
+        if (v.id && !v.id.startsWith('var-')) {
+          // Update existing variant
+          const { error: varError } = await supabase
+            .from('product_variants')
+            .update({
               sku: v.sku,
-              available: v.available,
-              archived: v.archived,
-              updatedAt: new Date().toISOString()
-            };
-            if (v.dealerPrices) {
-              dbService.saveDealerPricesForVariant(v.id, v.dealerPrices);
-            }
-          }
-        } else {
-          const variantId = `var-${Date.now()}-${vIdx}`;
-          const newV: ProductVariant = {
-            id: variantId,
-            productId: product.id,
-            packSize: v.packSize,
-            unit: v.unit || 'ml',
-            price: Number(v.price),
-            sku: v.sku || `SKU-${Date.now()}-${vIdx}`,
-            available: v.available !== false,
-            archived: v.archived === true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-          allVariants.push(newV);
+              pack_size: Number(v.packSize),
+              unit: v.unit,
+              price: Number(v.price),
+              available: v.available !== false,
+              archived: v.archived === true
+            })
+            .eq('id', v.id);
+
+          if (varError) return { success: false, error: "Failed to update variant: " + varError.message };
+          
           if (v.dealerPrices) {
-            dbService.saveDealerPricesForVariant(variantId, v.dealerPrices);
+            await this.saveDealerPricesForVariant(v.id, v.dealerPrices);
+          }
+        } else {
+          // Insert new variant
+          const { data: newV, error: varError } = await supabase
+            .from('product_variants')
+            .insert({
+              product_id: product.id,
+              sku: v.sku || `SKU-${Date.now()}-${Math.random()}`,
+              pack_size: Number(v.packSize),
+              unit: v.unit,
+              price: Number(v.price),
+              available: v.available !== false,
+              archived: v.archived === true
+            })
+            .select()
+            .single();
+
+          if (varError) return { success: false, error: "Failed to insert variant: " + varError.message };
+          
+          if (v.dealerPrices && newV) {
+            await this.saveDealerPricesForVariant(newV.id, v.dealerPrices);
           }
         }
-      });
-      localStorage.setItem('ad_product_variants', JSON.stringify(allVariants));
-    }
-
-    return { success: true, product };
-  },
-
-  archiveProduct(id: string): { success: boolean; error?: string } {
-    initLocalStorage();
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const idx = products.findIndex(p => p.id === id);
-    
-    if (idx === -1) {
-      return { success: false, error: "Product not found" };
-    }
-    
-    products[idx].archived = true;
-    localStorage.setItem('ad_products', JSON.stringify(products));
-
-    // Archive all child variants too
-    const allVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-    allVariants.forEach(v => {
-      if (v.productId === id) {
-        v.archived = true;
       }
-    });
-    localStorage.setItem('ad_product_variants', JSON.stringify(allVariants));
+    }
 
+    await this.syncFromSupabase();
     return { success: true };
   },
 
-  restoreProduct(id: string): { success: boolean; error?: string } {
-    initLocalStorage();
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const idx = products.findIndex(p => p.id === id);
+  async archiveProduct(id: string): Promise<{ success: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('products')
+      .update({ archived: true })
+      .eq('id', id);
     
-    if (idx === -1) {
-      return { success: false, error: "Product not found" };
-    }
-    
-    products[idx].archived = false;
-    localStorage.setItem('ad_products', JSON.stringify(products));
-
-    // Restore all child variants too
-    const allVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-    allVariants.forEach(v => {
-      if (v.productId === id) {
-        v.archived = false;
-      }
-    });
-    localStorage.setItem('ad_product_variants', JSON.stringify(allVariants));
-
+    if (error) return { success: false, error: error.message };
+    await this.syncFromSupabase();
     return { success: true };
   },
 
-  // CSV/Excel Import simulation
-  validateBulkUpload(
-    csvText: string,
-    zipFiles: Record<string, Blob> = {}
-  ): BulkUploadPreviewResult {
-    initLocalStorage();
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const allVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-    const companiesList: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-
-    const { headers: rawHeaders, rows: parsedRows } = parseCSVOrFWF(csvText);
-    if (rawHeaders.length === 0) {
-      return {
-        success: false,
-        rows: [],
-        summary: { newProducts: 0, newVariants: 0, existingVariantsToUpdate: 0, imagesMatched: 0, warnings: 0, errors: 0 },
-        errorsList: ["Empty CSV file or headers missing"]
-      };
-    }
-
-    // Clean field function
-    const cleanField = (field: string) => {
-      if (!field) return "";
-      let f = field.trim();
-      if (f.startsWith('"') && f.endsWith('"')) {
-        f = f.slice(1, -1);
-      }
-      return f.trim().replace(/\s+/g, " ");
-    };
-
-    // Parse headers using parseCSVLine and ALIAS_MAP
-    const normalizedHeaders = rawHeaders.map(h => {
-      const cleaned = cleanField(h).toLowerCase();
-      return ALIAS_MAP[cleaned] || cleaned;
-    });
-
-    const nameIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.PRODUCT_NAME);
-    const brandIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.COMPANY);
-    const catIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.CATEGORY);
-    const skuIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.SKU);
-
-    const varIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.VARIANT_NAME);
-    const packIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.PACK_SIZE);
-    const unitIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.UNIT);
-    const imgIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.IMAGE_FILE);
-    const statusIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.STATUS);
-    const priceIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.PRICE);
-
-    // Get detected columns list of canonical fields (for layout error display)
-    const detectedList = normalizedHeaders
-      .filter(h => Object.values(CANONICAL_FIELDS).includes(h))
-      .filter((v, idx, self) => self.indexOf(v) === idx); // Deduplicate
-
-    // Check required columns in headers
-    const requiredCanonical = [
-      CANONICAL_FIELDS.PRODUCT_NAME,
-      CANONICAL_FIELDS.COMPANY,
-      CANONICAL_FIELDS.SKU,
-      CANONICAL_FIELDS.PACK_SIZE,
-      CANONICAL_FIELDS.UNIT,
-      CANONICAL_FIELDS.PRICE
-    ];
-
-    for (const req of requiredCanonical) {
-      if (normalizedHeaders.indexOf(req) === -1) {
-        return {
-          success: false,
-          rows: [],
-          summary: { newProducts: 0, newVariants: 0, existingVariantsToUpdate: 0, imagesMatched: 0, warnings: 0, errors: 0 },
-          errorsList: [
-            `Missing required column: ${req}`,
-            `Detected columns: ${detectedList.join(", ") || "None"}`
-          ]
-        };
-      }
-    }
-
-    const validCategories = new Set([
-      'Herbicides', 
-      'Insecticides', 
-      'Fertilizers', 
-      'Seeds', 
-      'Fungicides', 
-      'Others'
-    ].map(c => c.toLowerCase()));
-
-    const rows: BulkUploadRowPreview[] = [];
-    const errorsList: string[] = [];
-
-    const csvVariantsSeen = new Set<string>();
-    const csvSkusSeen = new Map<string, number>();
-    const csvProductsMap = new Map<string, boolean>();
-
-    let newProducts = 0;
-    let newVariants = 0;
-    let existingVariantsToUpdate = 0;
-    let imagesMatched = 0;
-    let totalWarnings = 0;
-    let totalErrors = 0;
-
-    for (let i = 0; i < parsedRows.length; i++) {
-      const fields = parsedRows[i];
-      const nameVal = nameIdx !== -1 && nameIdx < fields.length ? fields[nameIdx] : "";
-      const brandVal = brandIdx !== -1 && brandIdx < fields.length ? fields[brandIdx] : BUSINESS_CONFIG.name;
-      const catVal = catIdx !== -1 && catIdx < fields.length ? fields[catIdx] : "Others";
-      const packVal = packIdx !== -1 && packIdx < fields.length ? fields[packIdx] : "1";
-      const unitVal = unitIdx !== -1 && unitIdx < fields.length ? fields[unitIdx] : "L";
-      const skuVal = skuIdx !== -1 && skuIdx < fields.length ? fields[skuIdx] : "";
-      const imgVal = imgIdx !== -1 && imgIdx < fields.length ? fields[imgIdx] : "";
-      const priceVal = priceIdx !== -1 && priceIdx < fields.length ? fields[priceIdx] : "";
-      const statusVal = statusIdx !== -1 && statusIdx < fields.length ? fields[statusIdx] : "Active";
-      const varVal = varIdx !== -1 && varIdx < fields.length ? fields[varIdx] : "";
-
-      const rowNum = i + 2;
-      let rowErrors: string[] = [];
-      let rowWarnings: string[] = [];
-
-      // Required validations
-      if (!nameVal) {
-        rowErrors.push("Product Name is required.");
-      }
-      if (!brandVal) {
-        rowErrors.push("Company is required.");
-      }
-      if (!packVal) {
-        rowErrors.push("Pack Size is required.");
-      }
-      if (!unitVal) {
-        rowErrors.push("Unit is required.");
-      }
-      if (!skuVal) {
-        rowErrors.push("SKU is required.");
-      }
-
-      // Price cleaning & validations (strip ₹ symbol and INR)
-      let cleanedPrice = priceVal.trim();
-      if (cleanedPrice.startsWith('₹')) {
-        cleanedPrice = cleanedPrice.substring(1).trim();
-      } else if (cleanedPrice.endsWith('₹')) {
-        cleanedPrice = cleanedPrice.substring(0, cleanedPrice.length - 1).trim();
-      }
-      if (cleanedPrice.toLowerCase().endsWith('inr')) {
-        cleanedPrice = cleanedPrice.substring(0, cleanedPrice.length - 3).trim();
-      }
-
-      if (!cleanedPrice) {
-        rowErrors.push("Price is required.");
-      } else {
-        if (cleanedPrice.includes(',')) {
-          rowErrors.push("Price must not contain commas.");
-        } else {
-          const numericRegex = /^\d+(\.\d+)?$/;
-          if (!numericRegex.test(cleanedPrice)) {
-            rowErrors.push(`Invalid price format: '${priceVal}'. Price must be a positive numeric value.`);
-          } else {
-            const parsedPrice = parseFloat(cleanedPrice);
-            if (isNaN(parsedPrice) || parsedPrice <= 0) {
-              rowErrors.push("Price must be greater than 0.");
-            }
-          }
-        }
-      }
-
-      // Format validations
-      if (packVal) {
-        const pSize = parseFloat(packVal);
-        if (isNaN(pSize) || pSize <= 0) {
-          rowErrors.push(`Invalid Pack Size: '${packVal}'. Must be a valid positive number.`);
-        }
-      }
-      if (catVal && !validCategories.has(catVal.toLowerCase())) {
-        rowErrors.push(`Category '${catVal}' does not exist.`);
-      }
-      const normStatus = statusVal.trim().toLowerCase();
-      if (normStatus !== 'active' && normStatus !== 'inactive' && normStatus !== 'archived') {
-        rowErrors.push(`Invalid status value: '${statusVal}'. Must be Active or Inactive.`);
-      }
-
-      // Company mapping check
-      let companyObj = null;
-      if (brandVal) {
-        const normBrand = normalizeCompanyName(brandVal);
-        companyObj = companiesList.find(c => normalizeCompanyName(c.name) === normBrand);
-        if (!companyObj) {
-          rowErrors.push(`Company '${brandVal}' not found. Please create this company first.`);
-        }
-      }
-
-      // Normalization comparison
-      const normProdName = normalizeProductName(nameVal);
-      const normBrandName = brandVal ? normalizeCompanyName(brandVal) : "";
-      const normVarName = getNormalizedVariantName(varVal, packVal, unitVal);
-      const prodKey = `${normProdName}|${normBrandName}`;
-      const varKey = `${prodKey}|${normVarName}`;
-
-      // Duplicate variant check in CSV (using Product Name + Variant Name)
-      if (nameVal && (varVal || (packVal && unitVal))) {
-        if (csvVariantsSeen.has(varKey)) {
-          rowErrors.push(`Duplicate row: Product '${nameVal}' + Variant '${varVal || (packVal + " " + unitVal)}' appears more than once in this CSV.`);
-        } else {
-          csvVariantsSeen.add(varKey);
-        }
-      }
-
-      // Duplicate SKU check in CSV
-      if (skuVal) {
-        const normSku = skuVal.trim().toLowerCase();
-        if (csvSkusSeen.has(normSku)) {
-          const firstSeenRow = csvSkusSeen.get(normSku);
-          rowErrors.push(`Duplicate SKU: '${skuVal}' is used multiple times in this CSV (first seen at row ${firstSeenRow}).`);
-        } else {
-          csvSkusSeen.set(normSku, rowNum);
-        }
-      }
-
-      // Find matching entities in Database (avoid duplicate products on same SKU)
-      let matchingProductByName = nameVal && brandVal ? products.find(p => 
-        normalizeProductName(p.name) === normProdName && 
-        normalizeCompanyName(p.brand) === normBrandName
-      ) : undefined;
-
-      let matchingVariantBySku = skuVal ? allVariants.find(v => 
-        v.sku.trim().toLowerCase() === skuVal.trim().toLowerCase() && !v.archived
-      ) : undefined;
-
-      let parentOfSkuVariant = matchingVariantBySku ? products.find(p => 
-        p.id === matchingVariantBySku!.productId
-      ) : undefined;
-
-      // Database level Product + Variant existence checks
-      let dbProductExists = false;
-      let dbVariantExists = false;
-
-      if (rowErrors.length === 0) {
-        if (matchingProductByName) {
-          dbProductExists = true;
-          // Check if there is a variant under this product with the same pack size and unit (or variant name)
-          const matchingVariantByName = allVariants.find(v => 
-            v.productId === matchingProductByName!.id && 
-            normalizeVariantName(v.packSize, v.unit) === normVarName && 
-            !v.archived
-          );
-          if (matchingVariantByName || matchingVariantBySku) {
-            dbVariantExists = true;
-          }
-        } else if (matchingVariantBySku && parentOfSkuVariant) {
-          dbProductExists = true;
-          dbVariantExists = true;
-        }
-      }
-
-      // Image matched checks
-      if (imgVal) {
-        const cleanImgName = imgVal.trim().toLowerCase();
-        if (zipFiles[cleanImgName]) {
-          imagesMatched++;
-        } else {
-          rowWarnings.push(`Image '${imgVal}' not found in ZIP.`);
-        }
-      }
-
-      // Outcome classifications
-      let action: 'CREATE' | 'UPDATE' | 'ERROR' | 'WARNING' = 'CREATE';
-      let validationStatus: 'VALID' | 'WARNING' | 'ERROR' = 'VALID';
-      let details = "";
-
-      if (rowErrors.length > 0) {
-        action = 'ERROR';
-        validationStatus = 'ERROR';
-        details = rowErrors.join(' ');
-        totalErrors++;
-        errorsList.push(`Row ${rowNum}: ${details}`);
-      } else if (rowWarnings.length > 0) {
-        action = 'WARNING';
-        validationStatus = 'WARNING';
-        details = rowWarnings.join(' ');
-        totalWarnings++;
-        if (dbVariantExists) {
-          existingVariantsToUpdate++;
-        } else {
-          newVariants++;
-          if (!dbProductExists && !csvProductsMap.has(prodKey)) {
-            csvProductsMap.set(prodKey, true);
-            newProducts++;
-          }
-        }
-      } else {
-        if (dbVariantExists) {
-          action = 'UPDATE';
-          existingVariantsToUpdate++;
-        } else {
-          action = 'CREATE';
-          newVariants++;
-          if (!dbProductExists && !csvProductsMap.has(prodKey)) {
-            csvProductsMap.set(prodKey, true);
-            newProducts++;
-          }
-        }
-      }
-
-      rows.push({
-        rowNum,
-        action,
-        productName: nameVal || "",
-        companyName: brandVal || "",
-        category: catVal || "",
-        variantName: varVal || `${packVal} ${unitVal}`,
-        packSize: packVal || "",
-        unit: unitVal || "",
-        sku: skuVal || "",
-        price: cleanedPrice || "",
-        imageFile: imgVal || "",
-        status: statusVal || "",
-        validationStatus,
-        details
-      });
-    }
-
-    return {
-      success: totalErrors === 0,
-      rows,
-      summary: {
-        newProducts,
-        newVariants,
-        existingVariantsToUpdate,
-        imagesMatched,
-        warnings: totalWarnings,
-        errors: totalErrors
-      },
-      errorsList
-    };
-  },
-
-  async bulkUploadProducts(
-    csvText: string,
-    zipFiles: Record<string, Blob> = {}
-  ): Promise<{
-    success: boolean;
-    importedCount: number;
-    errors: string[];
-    productsCreated: number;
-    productsUpdated: number;
-    variantsCreated: number;
-    variantsUpdated: number;
-    imagesImported: number;
-    productsSkipped: number;
-  }> {
-    initLocalStorage();
-
-    const valResult = this.validateBulkUpload(csvText, zipFiles);
-    if (!valResult.success) {
-      return {
-        success: false,
-        importedCount: 0,
-        errors: valResult.errorsList,
-        productsCreated: 0,
-        productsUpdated: 0,
-        variantsCreated: 0,
-        variantsUpdated: 0,
-        imagesImported: 0,
-        productsSkipped: 0
-      };
-    }
-
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const allVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-    const companiesList: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-
-    let productsCreated = 0;
-    let productsUpdated = 0;
-    let variantsCreated = 0;
-    let variantsUpdated = 0;
-    let imagesImported = 0;
-
-    const productsToUpdate = [...products];
-    const variantsToUpdate = [...allVariants];
-
-    try {
-      const productGroups: Record<string, {
-        productId?: string;
-        name: string;
-        brand: string;
-        companyId: string;
-        category: string;
-        description: string;
-        techSpecs: string;
-        imageFile: string;
-        status: string;
-        rows: typeof valResult.rows;
-      }> = {};
-
-      valResult.rows.forEach((row: BulkUploadRowPreview) => {
-        const normProdName = normalizeProductName(row.productName);
-        const normBrandName = normalizeCompanyName(row.companyName);
-
-        // Find existing entities by name or by SKU
-        const matchingProductByName = productsToUpdate.find(p => 
-          normalizeProductName(p.name) === normProdName && 
-          normalizeCompanyName(p.brand) === normBrandName
-        );
-        const matchingVariantBySku = row.sku ? variantsToUpdate.find(v => 
-          v.sku.trim().toLowerCase() === row.sku.trim().toLowerCase() && !v.archived
-        ) : undefined;
-        const parentOfSkuVariant = matchingVariantBySku ? productsToUpdate.find(p => 
-          p.id === matchingVariantBySku!.productId
-        ) : undefined;
-
-        let groupKey = "";
-        let targetProductId = "";
-        let resolvedName = row.productName;
-        let resolvedBrand = row.companyName;
-
-        if (matchingProductByName) {
-          targetProductId = matchingProductByName.id;
-          groupKey = `id-${targetProductId}`;
-          resolvedName = matchingProductByName.name;
-          resolvedBrand = matchingProductByName.brand;
-        } else if (parentOfSkuVariant) {
-          targetProductId = parentOfSkuVariant.id;
-          groupKey = `id-${targetProductId}`;
-        } else {
-          groupKey = `new-${normProdName}|${normBrandName}`;
-        }
-
-        if (!productGroups[groupKey]) {
-          const matchedCompany = companiesList.find(c => normalizeCompanyName(c.name) === normBrandName);
-          productGroups[groupKey] = {
-            productId: targetProductId || undefined,
-            name: resolvedName,
-            brand: matchedCompany ? matchedCompany.name : resolvedBrand,
-            companyId: matchedCompany ? matchedCompany.id : "",
-            category: row.category,
-            description: "Wholesale agricultural product.",
-            techSpecs: "Contact admin for tech specs.",
-            imageFile: row.imageFile,
-            status: row.status,
-            rows: []
-          };
-        }
-        productGroups[groupKey].rows.push(row);
-      });
-
-      // Parse detailed techSpecs and description from CSV rows
-      const { headers: rawHeaders, rows: parsedRows } = parseCSVOrFWF(csvText);
-      
-      const cleanField = (field: string) => {
-        if (!field) return "";
-        let f = field.trim();
-        if (f.startsWith('"') && f.endsWith('"')) {
-          f = f.slice(1, -1);
-        }
-        return f.trim().replace(/\s+/g, " ");
-      };
-
-      const normalizedHeaders = rawHeaders.map(h => {
-        const cleaned = cleanField(h).toLowerCase();
-        return ALIAS_MAP[cleaned] || cleaned;
-      });
-
-      const nameIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.PRODUCT_NAME);
-      const brandIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.COMPANY);
-      const skuIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.SKU);
-      const descIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.DESCRIPTION);
-      const techIdx = normalizedHeaders.indexOf(CANONICAL_FIELDS.TECH_SPECS);
-
-      for (let i = 0; i < parsedRows.length; i++) {
-        const fields = parsedRows[i];
-        const nameVal = nameIdx !== -1 && nameIdx < fields.length ? fields[nameIdx] : "";
-        const brandVal = brandIdx !== -1 && brandIdx < fields.length ? fields[brandIdx] : "";
-        const skuVal = skuIdx !== -1 && skuIdx < fields.length ? fields[skuIdx] : "";
-
-        if (nameVal && brandVal) {
-          const normProdName = normalizeProductName(nameVal);
-          const normBrandName = normalizeCompanyName(brandVal);
-
-          const matchingProductByName = productsToUpdate.find(p => 
-            normalizeProductName(p.name) === normProdName && 
-            normalizeCompanyName(p.brand) === normBrandName
-          );
-          const matchingVariantBySku = skuVal ? variantsToUpdate.find(v => 
-            v.sku.trim().toLowerCase() === skuVal.trim().toLowerCase() && !v.archived
-          ) : undefined;
-          const parentOfSkuVariant = matchingVariantBySku ? productsToUpdate.find(p => 
-            p.id === matchingVariantBySku!.productId
-          ) : undefined;
-
-          let groupKey = "";
-          if (matchingProductByName) {
-            groupKey = `id-${matchingProductByName.id}`;
-          } else if (parentOfSkuVariant) {
-            groupKey = `id-${parentOfSkuVariant.id}`;
-          } else {
-            groupKey = `new-${normProdName}|${normBrandName}`;
-          }
-
-          if (productGroups[groupKey]) {
-            if (descIdx !== -1 && descIdx < fields.length && fields[descIdx]) {
-              productGroups[groupKey].description = fields[descIdx];
-            }
-            if (techIdx !== -1 && techIdx < fields.length && fields[techIdx]) {
-              productGroups[groupKey].techSpecs = fields[techIdx];
-            }
-          }
-        }
-      }
-
-      // Apply changes
-      for (const group of Object.values(productGroups)) {
-        let targetProduct: Product;
-
-        if (group.productId) {
-          const existingProductIdx = productsToUpdate.findIndex(p => p.id === group.productId);
-          productsToUpdate[existingProductIdx] = {
-            ...productsToUpdate[existingProductIdx],
-            name: group.name,
-            brand: group.brand,
-            companyId: group.companyId,
-            category: group.category.charAt(0).toUpperCase() + group.category.slice(1).toLowerCase(),
-            description: group.description,
-            techSpecs: group.techSpecs,
-            archived: group.status.toLowerCase() === 'inactive' || group.status.toLowerCase() === 'archived'
-          };
-          targetProduct = productsToUpdate[existingProductIdx];
-          productsUpdated++;
-        } else {
-          targetProduct = {
-            id: `prod-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-            name: group.name,
-            brand: group.brand,
-            companyId: group.companyId,
-            category: group.category.charAt(0).toUpperCase() + group.category.slice(1).toLowerCase(),
-            description: group.description,
-            techSpecs: group.techSpecs,
-            imageUrl: 'https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500&auto=format&fit=crop&q=60',
-            archived: group.status.toLowerCase() === 'inactive' || group.status.toLowerCase() === 'archived'
-          };
-          productsToUpdate.push(targetProduct);
-          productsCreated++;
-        }
-
-        // Matched images storage
-        if (group.imageFile) {
-          const cleanImgName = group.imageFile.trim().toLowerCase();
-          const imgBlob = zipFiles[cleanImgName];
-          if (imgBlob) {
-            await ImageStorageService.saveImage(group.imageFile, imgBlob);
-            targetProduct.imageUrl = group.imageFile;
-            imagesImported++;
-          }
-        }
-
-        // Match and update/create variants
-        for (const row of group.rows) {
-          const normVarName = getNormalizedVariantName(row.variantName, row.packSize, row.unit);
-
-          let existingVarIdx = -1;
-          if (row.sku) {
-            existingVarIdx = variantsToUpdate.findIndex(v => 
-              v.sku.trim().toLowerCase() === row.sku.trim().toLowerCase() && !v.archived
-            );
-          }
-
-          if (existingVarIdx === -1) {
-            existingVarIdx = variantsToUpdate.findIndex(v =>
-              v.productId === targetProduct.id &&
-              normalizeVariantName(v.packSize, v.unit) === normVarName &&
-              !v.archived
-            );
-          }
-
-          const parsedPrice = parseFloat(row.price);
-
-          if (existingVarIdx !== -1) {
-            variantsToUpdate[existingVarIdx] = {
-              ...variantsToUpdate[existingVarIdx],
-              productId: targetProduct.id,
-              sku: row.sku,
-              packSize: row.packSize,
-              unit: row.unit,
-              price: parsedPrice,
-              available: row.status.toLowerCase() === 'active',
-              archived: false,
-              updatedAt: new Date().toISOString()
-            };
-            variantsUpdated++;
-          } else {
-            const newVar: ProductVariant = {
-              id: `var-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-              productId: targetProduct.id,
-              packSize: row.packSize,
-              unit: row.unit,
-              price: parsedPrice,
-              sku: row.sku,
-              available: row.status.toLowerCase() === 'active',
-              archived: false,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            };
-            variantsToUpdate.push(newVar);
-            variantsCreated++;
-          }
-        }
-      }
-
-      // Write atomically to localStorage
-      localStorage.setItem('ad_products', JSON.stringify(productsToUpdate));
-      localStorage.setItem('ad_product_variants', JSON.stringify(variantsToUpdate));
-
-      return {
-        success: true,
-        importedCount: productsCreated + productsUpdated + variantsCreated + variantsUpdated,
-        errors: [],
-        productsCreated,
-        productsUpdated,
-        variantsCreated,
-        variantsUpdated,
-        imagesImported,
-        productsSkipped: 0
-      };
-
-    } catch (err) {
-      console.error("Bulk upload transaction write error: ", err);
-      return {
-        success: false,
-        importedCount: 0,
-        errors: ["Atomic database update failed: " + String(err)],
-        productsCreated: 0,
-        productsUpdated: 0,
-        variantsCreated: 0,
-        variantsUpdated: 0,
-        imagesImported: 0,
-        productsSkipped: 0
-      };
-    }
+  async restoreProduct(id: string): Promise<{ success: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('products')
+      .update({ archived: false })
+      .eq('id', id);
+    
+    if (error) return { success: false, error: error.message };
+    await this.syncFromSupabase();
+    return { success: true };
   },
 
   // --- ORDERS ---
@@ -2570,13 +2027,10 @@ export const dbService = {
     const orders: Order[] = JSON.parse(localStorage.getItem('ad_orders') || '[]');
     const items: OrderItem[] = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
     
-    // Filter orders based on authorization
     let userOrders = role === 'admin' ? orders : orders.filter(o => o.dealerId === userId);
     
-    // Attach order items
     userOrders = userOrders.map(order => {
       const orderItems = items.filter(item => item.orderId === order.id).map(item => {
-        // Populate default values for backward compatibility
         const confirmed = item.confirmed_quantity !== undefined ? item.confirmed_quantity : (order.orderStatus === 'cancelled' ? 0 : item.quantity);
         const cancelled = item.cancelled_quantity !== undefined ? item.cancelled_quantity : (order.orderStatus === 'cancelled' ? item.quantity : 0);
         const status = item.item_status || (order.orderStatus === 'cancelled' ? 'cancelled' : (order.orderStatus === 'new' ? 'pending' : 'confirmed'));
@@ -2591,171 +2045,202 @@ export const dbService = {
       return { ...order, items: orderItems };
     });
     
-    // Sort by date/createdAt descending
     return userOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  createOrder(orderData: {
+  async createOrder(orderData: {
     dealerId: string;
     dealerName: string;
     shopName: string;
     paymentMethod: 'pay_now' | 'pay_later';
     subtotal: number;
     total: number;
-  }, cartItems: { product: Product; variant: ProductVariant; quantity: number }[]): { success: boolean; order?: Order; error?: string } {
-    initLocalStorage();
-    const orders: Order[] = JSON.parse(localStorage.getItem('ad_orders') || '[]');
-    const orderItems: OrderItem[] = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
+  }, cartItems: { product: Product; variant: ProductVariant; quantity: number }[]): Promise<{ success: boolean; order?: Order; error?: string }> {
     
-    const orderId = `ORD-${1000 + orders.length + 1}`;
+    const { data: countData, error: countError } = await supabase
+      .from('orders')
+      .select('id', { count: 'exact' });
+
+    if (countError) return { success: false, error: "Failed to generate order number" };
+    
+    const nextNum = (countData?.length || 0) + 1;
+    const orderNumber = 'ORD-' + String(1000 + nextNum);
     const paymentStatus = orderData.paymentMethod === 'pay_now' ? 'paid' : 'pending';
-    
-    const newOrder: Order = {
-      id: orderId,
-      dealerId: orderData.dealerId,
-      dealerName: orderData.dealerName,
-      shopName: orderData.shopName,
-      date: new Date().toISOString().split('T')[0],
-      subtotal: orderData.subtotal,
-      total: orderData.total,
-      paymentMethod: orderData.paymentMethod,
-      paymentStatus: paymentStatus,
-      orderStatus: 'new',
-      createdAt: new Date().toISOString()
-    };
-    
-    // Create items with snapshots of product properties
-    const newItems: OrderItem[] = cartItems.map((item, idx) => ({
-      id: `item-${Date.now()}-${idx}`,
-      orderId: orderId,
-      productId: item.product.id,
-      productName: item.product.name,
+
+    // Insert order header
+    const { data: insertedOrder, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        order_number: orderNumber,
+        dealer_id: orderData.dealerId,
+        dealer_name: orderData.dealerName,
+        shop_name: orderData.shopName,
+        order_status: 'new',
+        payment_status: paymentStatus,
+        payment_method: orderData.paymentMethod,
+        subtotal: orderData.subtotal,
+        total: orderData.total
+      })
+      .select()
+      .single();
+
+    if (orderError || !insertedOrder) {
+      return { success: false, error: "Failed to place order header: " + orderError?.message };
+    }
+
+    // Insert order items
+    const itemsToInsert = cartItems.map((item) => ({
+      order_id: insertedOrder.id,
+      product_id: item.product.id,
+      product_name: item.product.name,
       brand: item.product.brand,
-      variantId: item.variant.id,
-      packSize: `${item.variant.packSize} ${item.variant.unit}`,
-      price: item.variant.price, // snapshot price
+      variant_id: item.variant.id,
+      pack_size: `${item.variant.packSize} ${item.variant.unit}`,
+      price: item.variant.price,
       quantity: item.quantity,
-      confirmed_quantity: item.quantity, // initial same as quantity
+      confirmed_quantity: item.quantity,
       cancelled_quantity: 0,
       item_status: 'pending',
       cancellation_reason: ''
     }));
-    
-    orders.push(newOrder);
-    orderItems.push(...newItems);
-    
-    localStorage.setItem('ad_orders', JSON.stringify(orders));
-    localStorage.setItem('ad_order_items', JSON.stringify(orderItems));
-    
-    return { success: true, order: { ...newOrder, items: newItems } };
+
+    const { data: insertedItems, error: itemsError } = await supabase
+      .from('order_items')
+      .insert(itemsToInsert)
+      .select();
+
+    if (itemsError) {
+      return { success: false, error: "Order placed but items failed: " + itemsError.message };
+    }
+
+    await this.syncFromSupabase();
+
+    // Map database properties back to original Order interface
+    const order: Order = {
+      id: insertedOrder.id,
+      dealerId: insertedOrder.dealer_id,
+      dealerName: insertedOrder.dealer_name,
+      shopName: insertedOrder.shop_name,
+      date: insertedOrder.order_date,
+      subtotal: Number(insertedOrder.subtotal),
+      total: Number(insertedOrder.total),
+      paymentMethod: insertedOrder.payment_method,
+      paymentStatus: insertedOrder.payment_status,
+      orderStatus: insertedOrder.order_status,
+      createdAt: insertedOrder.created_at,
+      items: insertedItems?.map((ii: any) => ({
+        id: ii.id,
+        orderId: ii.order_id,
+        productId: ii.product_id,
+        productName: ii.product_name,
+        brand: ii.brand,
+        variantId: ii.variant_id,
+        packSize: ii.pack_size,
+        price: Number(ii.price),
+        quantity: ii.quantity,
+        confirmed_quantity: ii.confirmed_quantity,
+        cancelled_quantity: ii.cancelled_quantity,
+        item_status: ii.item_status,
+        cancellation_reason: ii.cancellation_reason || ''
+      }))
+    };
+
+    return { success: true, order };
   },
 
-  updateOrderStatus(orderId: string, orderStatus: Order['orderStatus'], paymentStatus: Order['paymentStatus']): { success: boolean; error?: string } {
-    initLocalStorage();
-    const orders: Order[] = JSON.parse(localStorage.getItem('ad_orders') || '[]');
-    const idx = orders.findIndex(o => o.id === orderId);
-    
-    if (idx === -1) {
-      return { success: false, error: "Order not found" };
-    }
-    
-    orders[idx].orderStatus = orderStatus;
-    orders[idx].paymentStatus = paymentStatus;
-    
-    // If order status is explicitly set to cancelled, mark all items as cancelled
+  async updateOrderStatus(orderId: string, orderStatus: Order['orderStatus'], paymentStatus: Order['paymentStatus']): Promise<{ success: boolean; error?: string }> {
+    const { error: orderError } = await supabase
+      .from('orders')
+      .update({
+        order_status: orderStatus,
+        payment_status: paymentStatus
+      })
+      .eq('id', orderId);
+
+    if (orderError) return { success: false, error: orderError.message };
+
     if (orderStatus === 'cancelled') {
-      const items: OrderItem[] = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
-      const updatedItems = items.map(item => {
-        if (item.orderId === orderId) {
-          return {
-            ...item,
-            confirmed_quantity: 0,
-            cancelled_quantity: item.quantity,
-            item_status: 'cancelled' as const,
-            cancellation_reason: item.cancellation_reason || 'Dealer requested cancellation'
-          };
+      const { data: currentItems } = await supabase.from('order_items').select('*').eq('order_id', orderId);
+      if (currentItems) {
+        for (const item of currentItems) {
+          await supabase
+            .from('order_items')
+            .update({
+              confirmed_quantity: 0,
+              cancelled_quantity: item.quantity,
+              item_status: 'cancelled',
+              cancellation_reason: 'Order cancelled by administrator or dealer request'
+            })
+            .eq('id', item.id);
         }
-        return item;
-      });
-      localStorage.setItem('ad_order_items', JSON.stringify(updatedItems));
-      orders[idx].subtotal = 0;
-      orders[idx].total = 0;
+      }
+      await supabase.from('orders').update({ subtotal: 0, total: 0 }).eq('id', orderId);
     }
-    
-    localStorage.setItem('ad_orders', JSON.stringify(orders));
+
+    await this.syncFromSupabase();
     return { success: true };
   },
 
-  confirmOrderItems(orderId: string, itemsData: { itemId: string; confirmedQuantity: number; cancellationReason: string }[]): { success: boolean; error?: string } {
-    initLocalStorage();
-    const orders: Order[] = JSON.parse(localStorage.getItem('ad_orders') || '[]');
-    const items: OrderItem[] = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
-    
-    const orderIdx = orders.findIndex(o => o.id === orderId);
-    if (orderIdx === -1) {
-      return { success: false, error: "Order not found" };
-    }
-    
-    const order = orders[orderIdx];
-    
-    // Update matching items
-    let updatedItemsCount = 0;
-    const updatedItems = items.map(item => {
-      if (item.orderId === orderId) {
-        const editData = itemsData.find(d => d.itemId === item.id);
-        if (editData) {
-          updatedItemsCount++;
-          const confirmed = editData.confirmedQuantity;
-          const cancelled = item.quantity - confirmed;
-          let status: OrderItem['item_status'] = 'confirmed';
-          if (confirmed === 0) {
-            status = 'cancelled';
-          } else if (confirmed < item.quantity) {
-            status = 'partially_confirmed';
-          }
-          return {
-            ...item,
+  async confirmOrderItems(orderId: string, itemsData: { itemId: string; confirmedQuantity: number; cancellationReason: string }[]): Promise<{ success: boolean; error?: string }> {
+    for (const editData of itemsData) {
+      const { data: item } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('id', editData.itemId)
+        .single();
+
+      if (item) {
+        const confirmed = editData.confirmedQuantity;
+        const cancelled = item.quantity - confirmed;
+        let status = 'confirmed';
+        if (confirmed === 0) {
+          status = 'cancelled';
+        } else if (confirmed < item.quantity) {
+          status = 'partially_confirmed';
+        }
+
+        await supabase
+          .from('order_items')
+          .update({
             confirmed_quantity: confirmed,
             cancelled_quantity: cancelled,
             item_status: status,
             cancellation_reason: cancelled > 0 ? editData.cancellationReason : ''
-          };
-        }
+          })
+          .eq('id', editData.itemId);
       }
-      return item;
-    });
-    
-    if (updatedItemsCount === 0) {
-      return { success: false, error: "No items updated" };
     }
-    
-    // Save updated items
-    localStorage.setItem('ad_order_items', JSON.stringify(updatedItems));
-    
-    // Find current items for this order to calculate totals and status
-    const currentOrderItems = updatedItems.filter(item => item.orderId === orderId);
-    
-    // Check overall status
-    const allConfirmed = currentOrderItems.every(item => item.confirmed_quantity === item.quantity);
-    const allCancelled = currentOrderItems.every(item => item.confirmed_quantity === 0);
-    
-    let computedStatus: Order['orderStatus'] = 'partially_confirmed';
-    if (allConfirmed) {
-      computedStatus = 'confirmed';
-    } else if (allCancelled) {
-      computedStatus = 'cancelled';
+
+    const { data: currentOrderItems } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', orderId);
+
+    if (currentOrderItems) {
+      const allConfirmed = currentOrderItems.every(item => item.confirmed_quantity === item.quantity);
+      const allCancelled = currentOrderItems.every(item => item.confirmed_quantity === 0);
+      
+      let computedStatus = 'partially_confirmed';
+      if (allConfirmed) {
+        computedStatus = 'confirmed';
+      } else if (allCancelled) {
+        computedStatus = 'cancelled';
+      }
+
+      const newSubtotal = currentOrderItems.reduce((sum, item) => sum + (Number(item.price) * (item.confirmed_quantity ?? 0)), 0);
+      const newTotal = newSubtotal;
+
+      await supabase
+        .from('orders')
+        .update({
+          order_status: computedStatus,
+          subtotal: newSubtotal,
+          total: newTotal
+        })
+        .eq('id', orderId);
     }
-    
-    // Calculate new total and subtotal based on confirmed quantities only
-    const newSubtotal = currentOrderItems.reduce((sum, item) => sum + (item.price * (item.confirmed_quantity ?? 0)), 0);
-    const newTotal = newSubtotal;
-    
-    order.orderStatus = computedStatus;
-    order.subtotal = newSubtotal;
-    order.total = newTotal;
-    
-    // Save orders
-    localStorage.setItem('ad_orders', JSON.stringify(orders));
+
+    await this.syncFromSupabase();
     return { success: true };
   },
 
@@ -2777,9 +2262,32 @@ export const dbService = {
     return JSON.parse(localStorage.getItem('ad_settings') || JSON.stringify(DEFAULT_SETTINGS));
   },
 
-  updateSettings(settings: SystemSettings): { success: boolean } {
-    initLocalStorage();
-    localStorage.setItem('ad_settings', JSON.stringify(settings));
+  async updateSettings(settings: SystemSettings): Promise<{ success: boolean }> {
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({
+        id: 1, // single row enforcement
+        upi_id: settings.upiId,
+        upi_name: settings.upiName,
+        company_name: settings.companyName,
+        company_address: settings.companyAddress,
+        company_contact: settings.companyContact,
+        company_email: settings.companyEmail,
+        company_gst: settings.companyGst,
+        allow_pay_now: settings.allowPayNow,
+        allow_pay_later: settings.allowPayLater,
+        upi_qr_code: settings.upiQrCode || '',
+        company_logo: settings.companyLogo || '',
+        company_whatsapp: settings.companyWhatsapp || '',
+        company_registration: settings.companyRegistration || ''
+      });
+
+    if (error) {
+      console.error("Failed to update system settings:", error);
+      return { success: false };
+    }
+
+    await this.syncFromSupabase();
     return { success: true };
   },
 
@@ -2793,112 +2301,90 @@ export const dbService = {
     return companies.filter(c => c.status === 'active');
   },
 
-  addCompany(companyData: Omit<Company, 'id' | 'createdAt' | 'updatedAt'>): { success: boolean; company?: Company; error?: string } {
-    initLocalStorage();
-    const companies: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-    
-    // Check if company already exists
-    if (companies.some(c => c.name.toLowerCase() === companyData.name.toLowerCase())) {
-      return { success: false, error: "A company with this name already exists" };
+  async addCompany(companyData: Omit<Company, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; company?: Company; error?: string }> {
+    const { data: inserted, error } = await supabase
+      .from('companies')
+      .insert({
+        name: companyData.name,
+        logo: companyData.logo || getCompanyPlaceholderLogo(companyData.name),
+        description: companyData.description || '',
+        status: 'active'
+      })
+      .select()
+      .single();
+
+    if (error || !inserted) {
+      return { success: false, error: error?.message || "Failed to create company" };
     }
 
-    const newCompany: Company = {
-      ...companyData,
-      id: `comp-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    await this.syncFromSupabase();
+
+    const company: Company = {
+      id: inserted.id,
+      name: inserted.name,
+      logo: inserted.logo,
+      description: inserted.description,
+      status: inserted.status,
+      createdAt: inserted.created_at,
+      updatedAt: inserted.updated_at
     };
 
-    companies.push(newCompany);
-    localStorage.setItem('ad_companies', JSON.stringify(companies));
-    return { success: true, company: newCompany };
+    return { success: true, company };
   },
 
-  updateCompany(company: Company): { success: boolean; company?: Company; error?: string } {
-    initLocalStorage();
-    const companies: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-    const idx = companies.findIndex(c => c.id === company.id);
+  async updateCompany(company: Company): Promise<{ success: boolean; company?: Company; error?: string }> {
+    const { error } = await supabase
+      .from('companies')
+      .update({
+        name: company.name,
+        logo: company.logo,
+        description: company.description,
+        status: company.status
+      })
+      .eq('id', company.id);
 
-    if (idx === -1) {
-      return { success: false, error: "Company not found" };
-    }
+    if (error) return { success: false, error: error.message };
 
-    // Check if name is taken by another company
-    if (companies.some(c => c.id !== company.id && c.name.toLowerCase() === company.name.toLowerCase())) {
-      return { success: false, error: "Another company with this name already exists" };
-    }
-
-    const updatedCompany = {
-      ...company,
-      updatedAt: new Date().toISOString()
-    };
-
-    companies[idx] = updatedCompany;
-    localStorage.setItem('ad_companies', JSON.stringify(companies));
-
-    // Update product brands cache to match the updated company name!
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    let productsUpdated = false;
-    products.forEach((p, pIdx) => {
-      if (p.companyId === company.id) {
-        products[pIdx].brand = company.name;
-        productsUpdated = true;
-      }
-    });
-    if (productsUpdated) {
-      localStorage.setItem('ad_products', JSON.stringify(products));
-    }
-
-    return { success: true, company: updatedCompany };
+    await this.syncFromSupabase();
+    return { success: true, company };
   },
 
-  archiveCompany(id: string): { success: boolean; error?: string } {
-    initLocalStorage();
-    const companies: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-    const idx = companies.findIndex(c => c.id === id);
+  async archiveCompany(id: string): Promise<{ success: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('companies')
+      .update({ status: 'inactive' })
+      .eq('id', id);
 
-    if (idx === -1) {
-      return { success: false, error: "Company not found" };
-    }
-
-    companies[idx].status = 'inactive';
-    companies[idx].updatedAt = new Date().toISOString();
-    localStorage.setItem('ad_companies', JSON.stringify(companies));
+    if (error) return { success: false, error: error.message };
+    await this.syncFromSupabase();
     return { success: true };
   },
 
-  restoreCompany(id: string): { success: boolean; error?: string } {
-    initLocalStorage();
-    const companies: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-    const idx = companies.findIndex(c => c.id === id);
+  async restoreCompany(id: string): Promise<{ success: boolean; error?: string }> {
+    const { error } = await supabase
+      .from('companies')
+      .update({ status: 'active' })
+      .eq('id', id);
 
-    if (idx === -1) {
-      return { success: false, error: "Company not found" };
-    }
-
-    companies[idx].status = 'active';
-    companies[idx].updatedAt = new Date().toISOString();
-    localStorage.setItem('ad_companies', JSON.stringify(companies));
+    if (error) return { success: false, error: error.message };
+    await this.syncFromSupabase();
     return { success: true };
   },
 
-  deleteCompany(id: string): { success: boolean; error?: string } {
-    initLocalStorage();
-    const companies: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-    const idx = companies.findIndex(c => c.id === id);
-    if (idx === -1) {
-      return { success: false, error: "Company not found" };
+  async deleteCompany(id: string): Promise<{ success: boolean; error?: string }> {
+    const { data: countProducts } = await supabase.from('products').select('id').eq('company_id', id);
+    if (countProducts && countProducts.length > 0) {
+      return { success: false, error: `Cannot delete company. This company has ${countProducts.length} products associated with it.` };
     }
-    
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const hasProducts = products.some(p => p.companyId === id);
-    if (hasProducts) {
-      const activeCount = products.filter(p => p.companyId === id).length;
-      return { success: false, error: `Cannot delete company. This company has ${activeCount} products associated with it.` };
-    }
-    
-    companies.splice(idx, 1);
-    localStorage.setItem('ad_companies', JSON.stringify(companies));
+
+    const { error } = await supabase
+      .from('companies')
+      .delete()
+      .eq('id', id);
+
+    if (error) return { success: false, error: error.message };
+
+    await this.syncFromSupabase();
     return { success: true };
   },
 
@@ -2912,80 +2398,74 @@ export const dbService = {
     }
   },
 
-  resolveMigration(brand: string, action: 'create' | 'map', targetCompanyId?: string): { success: boolean; error?: string } {
-    initLocalStorage();
-    const companies: Company[] = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-    const products: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    const orderItems: OrderItem[] = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
-    const flagsStr = localStorage.getItem('ad_migration_flags');
-    if (!flagsStr) return { success: false, error: "No pending migrations found" };
-    
-    let flags: { unmappedBrands: string[] } = { unmappedBrands: [] };
-    try {
-      flags = JSON.parse(flagsStr);
-    } catch {
-      return { success: false, error: "Failed to parse migration flags" };
-    }
-    
-    const unmappedIdx = flags.unmappedBrands.indexOf(brand);
-    if (unmappedIdx === -1) {
-      return { success: false, error: "Brand migration not flagged" };
-    }
-    
+  async resolveMigration(brand: string, action: 'create' | 'map', targetCompanyId?: string): Promise<{ success: boolean; error?: string }> {
     const tempCompId = `comp-auto-${brand.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-    const tempCompIdx = companies.findIndex(c => c.id === tempCompId);
     
     if (action === 'create') {
-      if (tempCompIdx !== -1) {
-        companies[tempCompIdx].description = `${brand} agricultural solutions and crop health products.`;
-        companies[tempCompIdx].logo = getCompanyPlaceholderLogo(brand);
-        companies[tempCompIdx].updatedAt = new Date().toISOString();
-        localStorage.setItem('ad_companies', JSON.stringify(companies));
+      const { data: inserted } = await supabase
+        .from('companies')
+        .insert({
+          id: tempCompId,
+          name: brand,
+          description: `${brand} agricultural solutions and crop health products.`,
+          logo: getCompanyPlaceholderLogo(brand),
+          status: 'active'
+        })
+        .select()
+        .single();
+      
+      if (!inserted) {
+        await this.addCompany({ name: brand });
       }
     } else if (action === 'map') {
-      if (!targetCompanyId) {
-        return { success: false, error: "Target company is required for mapping action" };
-      }
-      const targetComp = companies.find(c => c.id === targetCompanyId);
-      if (!targetComp) {
-        return { success: false, error: "Target company not found" };
-      }
-      
-      products.forEach((p, idx) => {
-        if (p.companyId === tempCompId || p.brand.toLowerCase() === brand.toLowerCase()) {
-          products[idx].companyId = targetComp.id;
-          products[idx].brand = targetComp.name;
+      if (!targetCompanyId) return { success: false, error: "Target company is required" };
+      const { data: targetComp } = await supabase.from('companies').select('*').eq('id', targetCompanyId).single();
+      if (!targetComp) return { success: false, error: "Target company not found" };
+
+      await supabase
+        .from('products')
+        .update({
+          company_id: targetComp.id,
+          brand: targetComp.name
+        })
+        .eq('company_id', tempCompId);
+
+      await supabase
+        .from('products')
+        .update({
+          company_id: targetComp.id,
+          brand: targetComp.name
+        })
+        .eq('brand', brand);
+
+      await supabase.from('companies').delete().eq('id', tempCompId);
+    }
+
+    const flagsStr = localStorage.getItem('ad_migration_flags');
+    if (flagsStr) {
+      try {
+        const flags = JSON.parse(flagsStr);
+        const unmappedIdx = flags.unmappedBrands.indexOf(brand);
+        if (unmappedIdx !== -1) {
+          flags.unmappedBrands.splice(unmappedIdx, 1);
+          if (flags.unmappedBrands.length > 0) {
+            localStorage.setItem('ad_migration_flags', JSON.stringify(flags));
+          } else {
+            localStorage.removeItem('ad_migration_flags');
+          }
         }
-      });
-      localStorage.setItem('ad_products', JSON.stringify(products));
-      
-      orderItems.forEach((item, idx) => {
-        if (item.brand.toLowerCase() === brand.toLowerCase()) {
-          orderItems[idx].brand = targetComp.name;
-        }
-      });
-      localStorage.setItem('ad_order_items', JSON.stringify(orderItems));
-      
-      if (tempCompIdx !== -1) {
-        companies.splice(tempCompIdx, 1);
-        localStorage.setItem('ad_companies', JSON.stringify(companies));
+      } catch (e) {
+        // skip
       }
     }
-    
-    flags.unmappedBrands.splice(unmappedIdx, 1);
-    if (flags.unmappedBrands.length > 0) {
-      localStorage.setItem('ad_migration_flags', JSON.stringify(flags));
-    } else {
-      localStorage.removeItem('ad_migration_flags');
-    }
-    
+
+    await this.syncFromSupabase();
     return { success: true };
   },
 
   getDealerPrice(_dealerId: string | undefined, variant: ProductVariant): number {
     return variant.price;
   },
-
 
   getDealerPricesForVariant(variantId: string): Record<string, number> {
     const dealerPrices = JSON.parse(localStorage.getItem('ad_dealer_prices') || '[]');
@@ -2998,17 +2478,22 @@ export const dbService = {
     return result;
   },
 
-  saveDealerPricesForVariant(variantId: string, prices: Record<string, number>) {
-    let dealerPrices = JSON.parse(localStorage.getItem('ad_dealer_prices') || '[]');
-    // Filter out existing prices for this variant
-    dealerPrices = dealerPrices.filter((dp: any) => dp.variantId !== variantId);
-    // Add new prices
-    Object.entries(prices).forEach(([dealerId, price]) => {
-      if (price > 0) {
-        dealerPrices.push({ dealerId, variantId, price });
-      }
-    });
-    localStorage.setItem('ad_dealer_prices', JSON.stringify(dealerPrices));
+  async saveDealerPricesForVariant(variantId: string, prices: Record<string, number>): Promise<void> {
+    await supabase.from('dealer_prices').delete().eq('variant_id', variantId);
+    
+    const pricesToInsert = Object.entries(prices)
+      .filter(([_, price]) => price > 0)
+      .map(([dealerId, price]) => ({
+        dealer_id: dealerId,
+        variant_id: variantId,
+        price: Number(price)
+      }));
+
+    if (pricesToInsert.length > 0) {
+      await supabase.from('dealer_prices').insert(pricesToInsert);
+    }
+
+    await this.syncFromSupabase();
   },
 
   getDeliveryChallans(): DeliveryChallan[] {
@@ -3028,10 +2513,10 @@ export const dbService = {
     if (!role) return null;
     if (role === 'admin') return challan;
     if (role === 'dealer' && challan.dealerId === currentUserId) return challan;
-    return null; // Deny access
+    return null;
   },
 
-  createDeliveryChallan(
+  async createDeliveryChallan(
     orderId: string, 
     transportDetails?: {
       transportThrough?: string;
@@ -3041,58 +2526,38 @@ export const dbService = {
       deliveryLocation?: string;
     }, 
     charges?: { hamali?: number; bhada?: number; otherCharges?: number }
-  ): DeliveryChallan | null {
-    initLocalStorage();
-    const orders: Order[] = JSON.parse(localStorage.getItem('ad_orders') || '[]');
-    const items: OrderItem[] = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
-    const orderIdx = orders.findIndex(o => o.id === orderId);
-    if (orderIdx === -1) return null;
+  ): Promise<DeliveryChallan | null> {
+    const { data: existing } = await supabase
+      .from('delivery_challans')
+      .select('*')
+      .eq('order_id', orderId)
+      .maybeSingle();
 
-    const order = orders[orderIdx];
-    
-    // Check if challan already exists
-    const existing = this.getDeliveryChallanByOrderId(orderId);
-    if (existing) return existing;
-
-    const rawOrderItems = items.filter(item => item.orderId === order.id).map(item => {
-      const confirmed = item.confirmed_quantity !== undefined ? item.confirmed_quantity : (order.orderStatus === 'cancelled' ? 0 : item.quantity);
-      const cancelled = item.cancelled_quantity !== undefined ? item.cancelled_quantity : (order.orderStatus === 'cancelled' ? item.quantity : 0);
-      const status = item.item_status || (order.orderStatus === 'cancelled' ? 'cancelled' : (order.orderStatus === 'new' ? 'pending' : 'confirmed'));
-      return {
-        ...item,
-        confirmed_quantity: confirmed,
-        cancelled_quantity: cancelled,
-        item_status: status,
-        cancellation_reason: item.cancellation_reason || ''
-      };
-    });
-
-    const totalConfirmed = rawOrderItems.reduce((sum, item) => sum + item.confirmed_quantity, 0);
-    if (order.orderStatus === 'cancelled' || totalConfirmed === 0) {
-      return null; // Safety block: cannot generate delivery challan for cancelled/empty confirmed quantity orders
+    if (existing) {
+      return this.getDeliveryChallanByOrderId(orderId);
     }
 
-    order.items = rawOrderItems;
+    const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
+    const { data: items } = await supabase.from('order_items').select('*').eq('order_id', orderId);
 
-    // Filter to include only items with confirmed_quantity > 0
-    const confirmedItemsSnapshot = rawOrderItems
-      .filter(item => item.confirmed_quantity > 0)
-      .map(item => ({
-        ...item,
-        quantity: item.confirmed_quantity // map quantity to confirmed_quantity for PDF/Print view rendering
-      }));
+    if (!order || !items) return null;
 
-    const challans = this.getDeliveryChallans();
-    const nextNum = challans.length + 1;
+    const totalConfirmed = items.reduce((sum, item) => sum + item.confirmed_quantity, 0);
+    if (order.order_status === 'cancelled' || totalConfirmed === 0) {
+      return null;
+    }
+
+    const { data: countData } = await supabase.from('delivery_challans').select('id');
+    const nextNum = (countData?.length || 0) + 1;
     const challanNumber = 'DC-' + String(nextNum).padStart(5, '0');
 
     const businessSnapshot = this.getSettings();
-    const dealerDetails = this.getDealerDetails(order.dealerId);
-    const dealerSnapshot: UserProfile = dealerDetails || {
-      id: order.dealerId,
+    const dealerDetails = this.getDealerDetails(order.dealer_id);
+    const dealerSnapshot = dealerDetails || {
+      id: order.dealer_id,
       role: 'dealer',
-      name: order.dealerName,
-      shopName: order.shopName,
+      name: order.dealer_name,
+      shopName: order.shop_name,
       mobile: '',
       email: '',
       address: '',
@@ -3100,31 +2565,71 @@ export const dbService = {
       createdAt: ''
     };
 
-    const newChallan: DeliveryChallan = {
-      id: `challan-${Date.now()}`,
-      challanNumber,
-      orderId: order.id,
-      dealerId: order.dealerId,
-      dispatchDate: new Date().toISOString(),
-      businessSnapshot,
-      dealerSnapshot,
-      itemsSnapshot: confirmedItemsSnapshot,
-      transportDetails: transportDetails || {},
-      hamali: Number(charges?.hamali || 0),
-      bhada: Number(charges?.bhada || 0),
-      otherCharges: Number(charges?.otherCharges || 0),
-      createdAt: new Date().toISOString()
-    };
+    const confirmedItemsSnapshot = items
+      .filter(item => item.confirmed_quantity > 0)
+      .map(item => ({
+        id: item.id,
+        orderId: item.order_id,
+        productId: item.product_id,
+        productName: item.product_name,
+        brand: item.brand,
+        variantId: item.variant_id,
+        packSize: item.pack_size,
+        price: Number(item.price),
+        quantity: item.confirmed_quantity,
+        confirmed_quantity: item.confirmed_quantity,
+        cancelled_quantity: item.cancelled_quantity,
+        item_status: item.item_status,
+        cancellation_reason: item.cancellation_reason || ''
+      }));
 
-    challans.push(newChallan);
-    localStorage.setItem('ad_delivery_challans', JSON.stringify(challans));
+    const { data: insertedChallan, error: challanError } = await supabase
+      .from('delivery_challans')
+      .insert({
+        challan_number: challanNumber,
+        order_id: orderId,
+        dealer_id: order.dealer_id,
+        hamali: Number(charges?.hamali || 0),
+        bhada: Number(charges?.bhada || 0),
+        other_charges: Number(charges?.otherCharges || 0),
+        transport_through: transportDetails?.transportThrough || null,
+        vehicle_number: transportDetails?.vehicleNumber || null,
+        driver_name: transportDetails?.driverName || null,
+        dispatch_location: transportDetails?.dispatchLocation || null,
+        delivery_location: transportDetails?.deliveryLocation || null,
+        business_snapshot: businessSnapshot,
+        dealer_snapshot: dealerSnapshot
+      })
+      .select()
+      .single();
 
-    // Update order status to dispatched
-    this.updateOrderStatus(orderId, 'dispatched', order.paymentStatus);
+    if (challanError || !insertedChallan) {
+      console.error("Failed to insert delivery challan:", challanError);
+      return null;
+    }
 
-    return newChallan;
+    const challanItemsToInsert = confirmedItemsSnapshot.map(item => ({
+      challan_id: insertedChallan.id,
+      order_item_id: item.id,
+      quantity: item.quantity
+    }));
+
+    const { error: itemsError } = await supabase
+      .from('delivery_challan_items')
+      .insert(challanItemsToInsert);
+
+    if (itemsError) {
+      console.error("Failed to insert challan items:", itemsError);
+    }
+
+    await this.updateOrderStatus(orderId, 'dispatched', order.payment_status);
+
+    await this.syncFromSupabase();
+
+    return this.getDeliveryChallanByOrderId(orderId);
   }
 } as any;
+
 
 const DB_NAME = 'agrodist_image_db';
 const STORE_NAME = 'images';
