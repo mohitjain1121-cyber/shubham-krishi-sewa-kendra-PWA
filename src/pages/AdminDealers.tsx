@@ -11,6 +11,38 @@ export const AdminDealers: React.FC = () => {
   // Selected dealer modal state
   const [selectedDealer, setSelectedDealer] = useState<UserProfile | null>(null);
   const [dealerOrders, setDealerOrders] = useState<Order[]>([]);
+  const [seeding, setSeeding] = useState(false);
+
+  const handleSeedTestDealer = async () => {
+    setSeeding(true);
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const testName = `Test Dealer ${randomSuffix}`;
+    const testShop = `Shop ${randomSuffix} Pesticides`;
+    const testMobile = `98765${randomSuffix}`;
+    const testEmail = `dealer_${randomSuffix}@shubhamkrishisewa.com`;
+
+    try {
+      const res = await dbService.register({
+        name: testName,
+        shopName: testShop,
+        mobile: testMobile,
+        email: testEmail,
+        address: "Industrial Area, Phase 1, Kurukshetra, Haryana",
+        gstNumber: `06ABCDE${randomSuffix}F1Z0`
+      });
+
+      if (res.success) {
+        alert(`Successfully seeded test dealer!\n\nName: ${testName}\nMobile: ${testMobile}\nEmail: ${testEmail}\nPassword (derived): ${testEmail}_sksk_pwa_secret_2026`);
+        loadData();
+      } else {
+        alert("Failed to seed test dealer: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error seeding test dealer: " + err.message);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const loadData = () => {
     const dList = dbService.getDealers();
@@ -96,9 +128,18 @@ export const AdminDealers: React.FC = () => {
           </h3>
           <p className="text-[11px] text-slate-400 mt-0.5">View and inspect registered pesticide dealer accounts and order histories</p>
         </div>
-        <span className="text-xs bg-slate-100 text-slate-650 font-bold px-3 py-1.5 rounded-xl border border-slate-200">
-          {dealers.length} Dealers Registered
-        </span>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleSeedTestDealer}
+            disabled={seeding}
+            className="text-xs bg-[#12873A] hover:bg-[#16A34A] text-white font-bold px-3.5 py-1.5 rounded-xl transition shadow-xs cursor-pointer flex items-center space-x-1 disabled:opacity-50"
+          >
+            <span>{seeding ? 'Seeding...' : '+ Seed Test Dealer'}</span>
+          </button>
+          <span className="text-xs bg-slate-100 text-slate-650 font-bold px-3 py-1.5 rounded-xl border border-slate-200">
+            {dealers.length} Dealers Registered
+          </span>
+        </div>
       </div>
 
       {/* Search Bar Panel */}

@@ -1670,31 +1670,187 @@ export const dbService = {
       // Pull public data (available to anyone including anon/guests)
       const { data: companies } = await supabase.from('companies').select('*');
       const { data: products } = await supabase.from('products').select('*');
-      const { data: variants } = await supabase.from('product_variants').select('*');
       const { data: settings } = await supabase.from('system_settings').select('*');
 
+      // Fetch base product variants (secure from guest pricing)
+      const { data: rawVariants } = await supabase.from('product_variants').select('*');
+
+      // Guest base-price security: Only fetch base prices if authenticated
+      let variantsWithPrices = (rawVariants || []).map((rv: any) => ({
+        id: rv.id,
+        productId: rv.product_id,
+        sku: rv.sku,
+        packSize: String(rv.pack_size),
+        unit: rv.unit,
+        price: 0, // Guest default is 0/hidden
+        available: rv.available !== false,
+        archived: rv.archived === true,
+        imageUrl: rv.image_url || '',
+        createdAt: rv.created_at,
+        updatedAt: rv.updated_at
+      }));
+
       if (companies) localStorage.setItem('ad_companies', JSON.stringify(companies));
-      if (products) localStorage.setItem('ad_products', JSON.stringify(products));
-      if (variants) localStorage.setItem('ad_product_variants', JSON.stringify(variants));
-      if (settings && settings[0]) localStorage.setItem('ad_settings', JSON.stringify(settings[0]));
+      if (products) {
+        const normalizedProds = products.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          brand: p.brand,
+          companyId: p.company_id,
+          category: p.category,
+          description: p.description || '',
+          techSpecs: p.tech_specs || '',
+          imageUrl: p.image_url || '',
+          archived: p.archived === true
+        }));
+        localStorage.setItem('ad_products', JSON.stringify(normalizedProds));
+      }
+      if (settings && settings[0]) {
+        const s = settings[0];
+        localStorage.setItem('ad_settings', JSON.stringify({
+          upiId: s.upi_id,
+          upiName: s.upi_name,
+          companyName: s.company_name,
+          companyAddress: s.company_address,
+          companyContact: s.company_contact,
+          companyEmail: s.company_email,
+          companyGst: s.company_gst,
+          allowPayNow: s.allow_pay_now !== false,
+          allowPayLater: s.allow_pay_later !== false,
+          upiQrCode: s.upi_qr_code || '',
+          companyLogo: s.company_logo || '',
+          companyWhatsapp: s.company_whatsapp || '',
+          companyRegistration: s.company_registration || ''
+        }));
+      }
 
       if (sessionUser) {
         // Authenticated data queries
+        const { data: basePrices } = await supabase.from('variant_base_prices').select('*');
         const { data: orders } = await supabase.from('orders').select('*');
         const { data: orderItems } = await supabase.from('order_items').select('*');
         const { data: challans } = await supabase.from('delivery_challans').select('*');
+        const { data: challanItems } = await supabase.from('delivery_challan_items').select('*');
         const { data: prices } = await supabase.from('dealer_prices').select('*');
 
-        if (orders) localStorage.setItem('ad_orders', JSON.stringify(orders));
-        if (orderItems) localStorage.setItem('ad_order_items', JSON.stringify(orderItems));
-        if (challans) localStorage.setItem('ad_delivery_challans', JSON.stringify(challans));
-        if (prices) localStorage.setItem('ad_dealer_prices', JSON.stringify(prices));
+        // Map base prices into authenticated variants
+        if (basePrices) {
+          variantsWithPrices = variantsWithPrices.map(v => {
+            const bp = basePrices.find((p: any) => p.variant_id === v.id);
+            return {
+              ...v,
+              price: bp ? Number(bp.price) : 0
+            };
+          });
+        }
+
+        if (orders) {
+          const normalizedOrders = orders.map((o: any) => ({
+            id: o.id,
+            dealerId: o.dealer_id,
+            dealerName: o.dealer_name,
+            shopName: o.shop_name,
+            date: o.order_date,
+            subtotal: Number(o.subtotal),
+            total: Number(o.total),
+            paymentMethod: o.payment_method,
+            paymentStatus: o.payment_status,
+            orderStatus: o.order_status,
+            createdAt: o.created_at
+          }));
+          localStorage.setItem('ad_orders', JSON.stringify(normalizedOrders));
+        }
+
+        if (orderItems) {
+          const normalizedItems = orderItems.map((ii: any) => ({
+            id: ii.id,
+            orderId: ii.order_id,
+            productId: ii.product_id,
+            productName: ii.product_name,
+            brand: ii.brand,
+            variantId: ii.variant_id,
+            packSize: ii.pack_size,
+            price: Number(ii.price),
+            quantity: ii.quantity,
+            confirmed_quantity: ii.confirmed_quantity,
+            cancelled_quantity: ii.cancelled_quantity,
+            item_status: ii.item_status,
+            cancellation_reason: ii.cancellation_reason || ''
+          }));
+          localStorage.setItem('ad_order_items', JSON.stringify(normalizedItems));
+        }
+
+        if (challans) {
+          const localOrderItems = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
+          const normalizedChallans = challans.map((c: any) => {
+            const itemsForChallan = (challanItems || [])
+              .filter(ci => ci.challan_id === c.id)
+              .map(ci => {
+                const matchedItem = localOrderItems.find((oi: any) => oi.id === ci.order_item_id);
+                if (matchedItem) {
+                  return {
+                    ...matchedItem,
+                    quantity: ci.quantity
+                  };
+                }
+                return null;
+              })
+              .filter(Boolean);
+
+            return {
+              id: c.id,
+              challanNumber: c.challan_number,
+              orderId: c.order_id,
+              dealerId: c.dealer_id,
+              dispatchDate: c.dispatch_date,
+              businessSnapshot: c.business_snapshot,
+              dealerSnapshot: c.dealer_snapshot,
+              itemsSnapshot: itemsForChallan,
+              transportDetails: {
+                transportThrough: c.transport_through,
+                vehicleNumber: c.vehicle_number,
+                driverName: c.driver_name,
+                dispatchLocation: c.dispatch_location,
+                deliveryLocation: c.delivery_location
+              },
+              hamali: Number(c.hamali),
+              bhada: Number(c.bhada),
+              otherCharges: Number(c.other_charges),
+              createdAt: c.created_at
+            };
+          });
+          localStorage.setItem('ad_delivery_challans', JSON.stringify(normalizedChallans));
+        }
+
+        if (prices) {
+          const normalizedPrices = prices.map((dp: any) => ({
+            dealerId: dp.dealer_id,
+            variantId: dp.variant_id,
+            price: Number(dp.price)
+          }));
+          localStorage.setItem('ad_dealer_prices', JSON.stringify(normalizedPrices));
+        }
 
         if (sessionUser.role === 'admin') {
           const { data: dealers } = await supabase.from('profiles').select('*').eq('role', 'dealer');
-          if (dealers) localStorage.setItem('ad_dealers', JSON.stringify(dealers));
+          if (dealers) {
+            const normalizedDealers = dealers.map((d: any) => ({
+              id: d.id,
+              role: d.role,
+              name: d.name,
+              shopName: d.shop_name,
+              mobile: d.mobile,
+              email: d.email,
+              address: d.address || '',
+              gstNumber: d.gst_number || '',
+              createdAt: d.created_at
+            }));
+            localStorage.setItem('ad_dealers', JSON.stringify(normalizedDealers));
+          }
         }
       }
+
+      localStorage.setItem('ad_product_variants', JSON.stringify(variantsWithPrices));
       console.log('[Sync] Local storage synchronized successfully with Supabase');
     } catch (error) {
       console.warn('[Sync] Sync connection deferred (running offline):', error);
@@ -1814,7 +1970,11 @@ export const dbService = {
       createdAt: new Date().toISOString()
     };
 
-    localStorage.setItem('ad_session', JSON.stringify(user));
+    // If registering for another dealer (e.g. seeded by admin), do NOT overwrite current admin session!
+    const currentSession = this.getCurrentSession();
+    if (!currentSession || currentSession.role !== 'admin') {
+      localStorage.setItem('ad_session', JSON.stringify(user));
+    }
     
     // Sync from Supabase immediately
     await this.syncFromSupabase();
@@ -1894,7 +2054,6 @@ export const dbService = {
         product_id: insertedProduct.id,
         pack_size: Number(v.packSize),
         unit: v.unit,
-        price: Number(v.price),
         sku: v.sku || `SKU-${Date.now()}-${idx}`,
         available: v.available !== false,
         archived: v.archived === true,
@@ -1910,13 +2069,21 @@ export const dbService = {
         return { success: false, error: "Product created but variants failed: " + variantError.message };
       }
 
-      // Handle custom pricing if present
-      for (let i = 0; i < variants.length; i++) {
-        const v = variants[i];
-        if (v.dealerPrices && Object.keys(v.dealerPrices).length > 0) {
-          const matchedInserted = insertedVariants?.find(iv => iv.sku === v.sku);
+      // Handle base price insertion
+      if (insertedVariants) {
+        for (let i = 0; i < variants.length; i++) {
+          const v = variants[i];
+          const matchedInserted = insertedVariants.find(iv => iv.sku === v.sku);
           if (matchedInserted) {
-            await this.saveDealerPricesForVariant(matchedInserted.id, v.dealerPrices);
+            await supabase.from('variant_base_prices').insert({
+              variant_id: matchedInserted.id,
+              price: Number(v.price)
+            });
+
+            // Handle custom pricing if present
+            if (v.dealerPrices && Object.keys(v.dealerPrices).length > 0) {
+              await this.saveDealerPricesForVariant(matchedInserted.id, v.dealerPrices);
+            }
           }
         }
       }
@@ -1959,7 +2126,6 @@ export const dbService = {
               sku: v.sku,
               pack_size: Number(v.packSize),
               unit: v.unit,
-              price: Number(v.price),
               available: v.available !== false,
               archived: v.archived === true
             })
@@ -1967,6 +2133,12 @@ export const dbService = {
 
           if (varError) return { success: false, error: "Failed to update variant: " + varError.message };
           
+          // Update base price
+          await supabase.from('variant_base_prices').upsert({
+            variant_id: v.id,
+            price: Number(v.price)
+          }, { onConflict: 'variant_id' });
+
           if (v.dealerPrices) {
             await this.saveDealerPricesForVariant(v.id, v.dealerPrices);
           }
@@ -1979,7 +2151,6 @@ export const dbService = {
               sku: v.sku || `SKU-${Date.now()}-${Math.random()}`,
               pack_size: Number(v.packSize),
               unit: v.unit,
-              price: Number(v.price),
               available: v.available !== false,
               archived: v.archived === true
             })
@@ -1988,8 +2159,16 @@ export const dbService = {
 
           if (varError) return { success: false, error: "Failed to insert variant: " + varError.message };
           
-          if (v.dealerPrices && newV) {
-            await this.saveDealerPricesForVariant(newV.id, v.dealerPrices);
+          if (newV) {
+            // Insert base price
+            await supabase.from('variant_base_prices').insert({
+              variant_id: newV.id,
+              price: Number(v.price)
+            });
+
+            if (v.dealerPrices) {
+              await this.saveDealerPricesForVariant(newV.id, v.dealerPrices);
+            }
           }
         }
       }
@@ -1997,6 +2176,405 @@ export const dbService = {
 
     await this.syncFromSupabase();
     return { success: true };
+  },
+
+  // --- CSV BULK UPLOAD HANDLERS ---
+  validateBulkUpload(csvText: string, currentZipFiles: Record<string, Blob>): BulkUploadPreviewResult {
+    try {
+      const parsed = parseCSVOrFWF(csvText);
+      if (!parsed.headers || parsed.headers.length === 0) {
+        return {
+          success: false,
+          rows: [],
+          summary: { newProducts: 0, newVariants: 0, existingVariantsToUpdate: 0, imagesMatched: 0, warnings: 0, errors: 0 },
+          errorsList: ["Empty or invalid CSV layout"]
+        };
+      }
+
+      // Map header aliases
+      const mappedHeaders = parsed.headers.map(h => {
+        const lower = h.trim().toLowerCase();
+        return ALIAS_MAP[lower] || h;
+      });
+
+      const required = [
+        CANONICAL_FIELDS.PRODUCT_NAME,
+        CANONICAL_FIELDS.COMPANY,
+        CANONICAL_FIELDS.CATEGORY,
+        CANONICAL_FIELDS.SKU,
+        CANONICAL_FIELDS.PACK_SIZE,
+        CANONICAL_FIELDS.UNIT,
+        CANONICAL_FIELDS.PRICE
+      ];
+
+      const missing = required.filter(r => !mappedHeaders.includes(r));
+      if (missing.length > 0) {
+        return {
+          success: false,
+          rows: [],
+          summary: { newProducts: 0, newVariants: 0, existingVariantsToUpdate: 0, imagesMatched: 0, warnings: 0, errors: 0 },
+          errorsList: [`Missing required columns: ${missing.join(', ')}`]
+        };
+      }
+
+      const prodNameIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.PRODUCT_NAME);
+      const companyIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.COMPANY);
+      const categoryIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.CATEGORY);
+      const descIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.DESCRIPTION);
+      const techIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.TECH_SPECS);
+      const skuIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.SKU);
+      const variantNameIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.VARIANT_NAME);
+      const packSizeIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.PACK_SIZE);
+      const unitIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.UNIT);
+      const imageIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.IMAGE_FILE);
+      const statusIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.STATUS);
+      const priceIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.PRICE);
+
+      const localProducts: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
+      const localVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
+
+      const resultRows: BulkUploadRowPreview[] = [];
+      let newProductsCount = 0;
+      let newVariantsCount = 0;
+      let updateVariantsCount = 0;
+      let imagesMatchedCount = 0;
+      let totalWarnings = 0;
+      let totalErrors = 0;
+
+      // Keep track of products we are creating in this batch to avoid double counting
+      const uniqueBatchProducts = new Set<string>();
+
+      for (let i = 0; i < parsed.rows.length; i++) {
+        const fields = parsed.rows[i];
+        const rowNum = i + 2; // 1-based index plus header
+
+        const productName = fields[prodNameIdx]?.trim() || "";
+        const companyName = fields[companyIdx]?.trim() || "";
+        const category = fields[categoryIdx]?.trim() || "";
+        const sku = fields[skuIdx]?.trim() || "";
+        const packSizeStr = fields[packSizeIdx]?.trim() || "";
+        const unit = fields[unitIdx]?.trim() || "";
+        const priceStr = fields[priceIdx]?.trim() || "";
+        const imageFile = imageIdx !== -1 ? fields[imageIdx]?.trim() : "";
+        const status = statusIdx !== -1 ? fields[statusIdx]?.trim() || "Active" : "Active";
+        const description = descIdx !== -1 ? fields[descIdx]?.trim() || "" : "";
+        const techSpecs = techIdx !== -1 ? fields[techIdx]?.trim() || "" : "";
+        const variantName = variantNameIdx !== -1 && fields[variantNameIdx] ? fields[variantNameIdx].trim() : `${packSizeStr} ${unit}`;
+
+        let details = "";
+        let isError = false;
+        let isWarning = false;
+
+        if (!productName) { isError = true; details += "Product Name is required. "; }
+        if (!companyName) { isError = true; details += "Company is required. "; }
+        if (!sku) { isError = true; details += "SKU is required. "; }
+        if (!packSizeStr || isNaN(Number(packSizeStr)) || Number(packSizeStr) <= 0) { isError = true; details += "Valid Pack Size is required. "; }
+        if (!unit) { isError = true; details += "Unit is required. "; }
+        if (!priceStr || isNaN(Number(priceStr)) || Number(priceStr) <= 0) { isError = true; details += "Valid Price is required. "; }
+
+        let action: BulkUploadRowPreview['action'] = 'CREATE';
+
+        if (!isError) {
+          // Check if SKU exists
+          const existingVar = localVariants.find(v => v.sku.toLowerCase() === sku.toLowerCase());
+          if (existingVar) {
+            action = 'UPDATE';
+            updateVariantsCount++;
+            
+            // Check if matches existing parent product brand
+            const parentProduct = localProducts.find(p => p.id === existingVar.productId);
+            if (parentProduct && parentProduct.brand.toLowerCase() !== companyName.toLowerCase()) {
+              isWarning = true;
+              details += `SKU already matches company "${parentProduct.brand}" but CSV lists "${companyName}". Will be re-mapped. `;
+            }
+          } else {
+            newVariantsCount++;
+            // Check if parent product exists by (company, name)
+            const parentProduct = localProducts.find(p => 
+              p.name.toLowerCase() === productName.toLowerCase() && 
+              p.brand.toLowerCase() === companyName.toLowerCase()
+            );
+            const batchKey = `${companyName.toLowerCase()}||${productName.toLowerCase()}`;
+            if (!parentProduct && !uniqueBatchProducts.has(batchKey)) {
+              newProductsCount++;
+              uniqueBatchProducts.add(batchKey);
+            }
+          }
+
+          // Check image matching
+          if (imageFile) {
+            const cleanImgName = imageFile.trim().toLowerCase();
+            if (currentZipFiles[cleanImgName]) {
+              imagesMatchedCount++;
+            } else {
+              isWarning = true;
+              details += "Image file not found in ZIP (running offline fallback for image). ";
+            }
+          }
+        }
+
+        let valStatus: BulkUploadRowPreview['validationStatus'] = 'VALID';
+        if (isError) {
+          valStatus = 'ERROR';
+          action = 'ERROR';
+          totalErrors++;
+        } else if (isWarning) {
+          valStatus = 'WARNING';
+          action = 'WARNING';
+          totalWarnings++;
+        }
+
+        resultRows.push({
+          rowNum,
+          action,
+          productName,
+          companyName,
+          category,
+          variantName,
+          packSize: packSizeStr,
+          unit,
+          sku,
+          price: priceStr,
+          imageFile,
+          status,
+          validationStatus: valStatus,
+          details: details || "Ready to import"
+        });
+      }
+
+      return {
+        success: true,
+        rows: resultRows,
+        summary: {
+          newProducts: newProductsCount,
+          newVariants: newVariantsCount,
+          existingVariantsToUpdate: updateVariantsCount,
+          imagesMatched: imagesMatchedCount,
+          warnings: totalWarnings,
+          errors: totalErrors
+        },
+        errorsList: []
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        rows: [],
+        summary: { newProducts: 0, newVariants: 0, existingVariantsToUpdate: 0, imagesMatched: 0, warnings: 0, errors: 0 },
+        errorsList: ["Failed to validate: " + err.message]
+      };
+    }
+  },
+
+  async bulkUploadProducts(csvText: string, zipFilesMap: Record<string, Blob>): Promise<{
+    success: boolean;
+    productsCreated: number;
+    productsUpdated: number;
+    variantsCreated: number;
+    variantsUpdated: number;
+    imagesImported: number;
+    errors: string[];
+  }> {
+    try {
+      const valRes = this.validateBulkUpload(csvText, zipFilesMap);
+      if (!valRes.success || valRes.summary.errors > 0) {
+        return {
+          success: false,
+          productsCreated: 0,
+          productsUpdated: 0,
+          variantsCreated: 0,
+          variantsUpdated: 0,
+          imagesImported: 0,
+          errors: valRes.errorsList.concat(valRes.rows.filter(r => r.validationStatus === 'ERROR').map(r => `Row ${r.rowNum}: ${r.details}`))
+        };
+      }
+
+      // Fetch all companies, products, variants from Supabase
+      const { data: dbCompanies } = await supabase.from('companies').select('*');
+      const { data: dbProducts } = await supabase.from('products').select('*');
+      const { data: dbVariants } = await supabase.from('product_variants').select('*');
+
+      const companyMap = new Map<string, string>(); // name -> id
+      if (dbCompanies) {
+        dbCompanies.forEach(c => companyMap.set(c.name.toLowerCase().trim(), c.id));
+      }
+
+      const productMap = new Map<string, string>(); // "companyId||productName" -> id
+      if (dbProducts) {
+        dbProducts.forEach(p => productMap.set(`${p.company_id}||${p.name.toLowerCase().trim()}`, p.id));
+      }
+
+      const variantMap = new Map<string, any>(); // sku -> variant row
+      if (dbVariants) {
+        dbVariants.forEach(v => variantMap.set(v.sku.toLowerCase().trim(), v));
+      }
+
+      let productsCreated = 0;
+      let productsUpdated = 0;
+      let variantsCreated = 0;
+      let variantsUpdated = 0;
+      let imagesImported = 0;
+
+      // Process row by row
+      for (const row of valRes.rows) {
+        if (row.validationStatus === 'ERROR') continue;
+
+        // 1. Resolve Company
+        const normCompany = row.companyName.toLowerCase().trim();
+        let companyId = companyMap.get(normCompany);
+        if (!companyId) {
+          // Create company
+          const { data: insertedComp, error: compError } = await supabase
+            .from('companies')
+            .insert({
+              name: row.companyName,
+              logo: getCompanyPlaceholderLogo(row.companyName),
+              status: 'active'
+            })
+            .select()
+            .single();
+
+          if (compError || !insertedComp) {
+            throw new Error(`Failed to create company "${row.companyName}": ${compError?.message}`);
+          }
+          companyId = insertedComp.id;
+          companyMap.set(normCompany, companyId);
+        }
+
+        // 2. Resolve Product
+        const normProdName = row.productName.toLowerCase().trim();
+        const prodKey = `${companyId}||${normProdName}`;
+        let productId = productMap.get(prodKey);
+        let productWasCreated = false;
+        
+        if (!productId) {
+          // Create Product
+          const { data: insertedProd, error: prodError } = await supabase
+            .from('products')
+            .insert({
+              company_id: companyId,
+              name: row.productName,
+              brand: row.companyName,
+              category: row.category || 'others',
+              description: row.details.includes('Ready') ? '' : row.details,
+              tech_specs: '',
+              image_url: row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : '',
+              archived: false
+            })
+            .select()
+            .single();
+
+          if (prodError || !insertedProd) {
+            throw new Error(`Failed to create product "${row.productName}": ${prodError?.message}`);
+          }
+          productId = insertedProd.id;
+          productMap.set(prodKey, productId);
+          productsCreated++;
+          productWasCreated = true;
+        }
+
+        // 3. Resolve Image
+        let imageUrl = row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : '';
+        if (row.imageFile && zipFilesMap[row.imageFile.trim().toLowerCase()]) {
+          const blob = zipFilesMap[row.imageFile.trim().toLowerCase()];
+          await ImageStorageService.saveImage(row.imageFile, blob);
+          imageUrl = row.imageFile;
+          imagesImported++;
+        }
+
+        // 4. Resolve Variant & Base Price
+        const normSku = row.sku.toLowerCase().trim();
+        const existingVar = variantMap.get(normSku);
+
+        if (existingVar) {
+          // Update variant
+          const { error: varError } = await supabase
+            .from('product_variants')
+            .update({
+              product_id: productId,
+              pack_size: Number(row.packSize),
+              unit: row.unit,
+              available: row.status.toLowerCase() === 'active',
+              image_url: imageUrl || existingVar.image_url
+            })
+            .eq('id', existingVar.id);
+
+          if (varError) {
+            throw new Error(`Failed to update variant with SKU "${row.sku}": ${varError.message}`);
+          }
+
+          // Update Base Price
+          const { error: priceError } = await supabase
+            .from('variant_base_prices')
+            .upsert({
+              variant_id: existingVar.id,
+              price: Number(row.price)
+            }, { onConflict: 'variant_id' });
+
+          if (priceError) {
+            throw new Error(`Failed to update base price for SKU "${row.sku}": ${priceError.message}`);
+          }
+
+          variantsUpdated++;
+          if (!productWasCreated) productsUpdated++;
+        } else {
+          // Insert variant
+          const { data: insertedVar, error: varError } = await supabase
+            .from('product_variants')
+            .insert({
+              product_id: productId,
+              sku: row.sku,
+              pack_size: Number(row.packSize),
+              unit: row.unit,
+              available: row.status.toLowerCase() === 'active',
+              archived: false,
+              image_url: imageUrl
+            })
+            .select()
+            .single();
+
+          if (varError || !insertedVar) {
+            throw new Error(`Failed to insert variant with SKU "${row.sku}": ${varError?.message}`);
+          }
+
+          // Insert Base Price
+          const { error: priceError } = await supabase
+            .from('variant_base_prices')
+            .insert({
+              variant_id: insertedVar.id,
+              price: Number(row.price)
+            });
+
+          if (priceError) {
+            throw new Error(`Failed to create base price for SKU "${row.sku}": ${priceError.message}`);
+          }
+
+          variantsCreated++;
+        }
+      }
+
+      // Synchronize changes to local cache immediately
+      await this.syncFromSupabase();
+
+      return {
+        success: true,
+        productsCreated,
+        productsUpdated,
+        variantsCreated,
+        variantsUpdated,
+        imagesImported,
+        errors: []
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        productsCreated: 0,
+        productsUpdated: 0,
+        variantsCreated: 0,
+        variantsUpdated: 0,
+        imagesImported: 0,
+        errors: [err.message || "Unknown import error"]
+      };
+    }
   },
 
   async archiveProduct(id: string): Promise<{ success: boolean; error?: string }> {
@@ -2463,16 +3041,29 @@ export const dbService = {
     return { success: true };
   },
 
-  getDealerPrice(_dealerId: string | undefined, variant: ProductVariant): number {
-    return variant.price;
+  getDealerPrice(dealerId: string | undefined, variant: ProductVariant): number {
+    if (!dealerId) return 0;
+    
+    // Look up custom dealer price
+    const dealerPrices = JSON.parse(localStorage.getItem('ad_dealer_prices') || '[]');
+    const dp = dealerPrices.find((p: any) => 
+      (p.dealerId === dealerId || p.dealer_id === dealerId) && 
+      (p.variantId === variant.id || p.variant_id === variant.id)
+    );
+    
+    if (dp && Number(dp.price) > 0) {
+      return Number(dp.price);
+    }
+    
+    return Number(variant.price) || 0;
   },
 
   getDealerPricesForVariant(variantId: string): Record<string, number> {
     const dealerPrices = JSON.parse(localStorage.getItem('ad_dealer_prices') || '[]');
     const result: Record<string, number> = {};
     dealerPrices.forEach((dp: any) => {
-      if (dp.variantId === variantId) {
-        result[dp.dealerId] = dp.price;
+      if (dp.variantId === variantId || dp.variant_id === variantId) {
+        result[dp.dealerId || dp.dealer_id] = dp.price;
       }
     });
     return result;
