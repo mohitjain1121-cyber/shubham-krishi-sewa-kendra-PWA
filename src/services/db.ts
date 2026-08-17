@@ -1660,10 +1660,87 @@ function initLocalStorage() {
 
 initLocalStorage();
 
+export const isSupabaseConfigured = (): boolean => {
+  const url = import.meta.env.VITE_SUPABASE_URL || '';
+  const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  return url !== '' && key !== '' && !url.includes('your-project-id');
+};
+
 // Database Service Functions
 export const dbService = {
+  // --- OFFLINE FALLBACK LOGIC ---
+  localLogin(cleanLogin: string, passwordVal?: string): { success: boolean; user?: UserProfile; error?: string } {
+    // 1. Check if admin
+    const admins = JSON.parse(localStorage.getItem('ad_admins') || '[]');
+    const adminMatch = admins.find((a: any) => a.email.toLowerCase() === cleanLogin || a.mobile === cleanLogin);
+    if (adminMatch) {
+      if (passwordVal === adminMatch.password) {
+        const user: UserProfile = {
+          id: adminMatch.id,
+          role: 'admin',
+          name: adminMatch.name,
+          shopName: `${BUSINESS_CONFIG.shortName} Corporate`,
+          mobile: adminMatch.mobile,
+          email: adminMatch.email,
+          address: 'Corporate Headquarters',
+          gstNumber: 'CorporateGST',
+          createdAt: new Date().toISOString()
+        };
+        localStorage.setItem('ad_session', JSON.stringify(user));
+        return { success: true, user };
+      } else {
+        return { success: false, error: "Incorrect password for admin account" };
+      }
+    }
+    
+    // 2. Check if dealer
+    const dealers = JSON.parse(localStorage.getItem('ad_dealers') || '[]');
+    const dealerMatch = dealers.find((d: UserProfile) => d.email.toLowerCase() === cleanLogin || d.mobile === cleanLogin);
+    if (dealerMatch) {
+      localStorage.setItem('ad_session', JSON.stringify(dealerMatch));
+      return { success: true, user: dealerMatch };
+    }
+    
+    return { success: false, error: "Dealer account not found. Please register first." };
+  },
+
+  localRegister(dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>): { success: boolean; user?: UserProfile; error?: string } {
+    const dealers = JSON.parse(localStorage.getItem('ad_dealers') || '[]');
+    if (dealers.some((d: any) => d.mobile === dealerData.mobile || d.email === dealerData.email)) {
+      return { success: false, error: "Dealer account already exists locally." };
+    }
+
+    const newId = `dealer-${Date.now()}`;
+    const user: UserProfile = {
+      id: newId,
+      role: 'dealer',
+      name: dealerData.name,
+      shopName: dealerData.shopName,
+      mobile: dealerData.mobile,
+      email: dealerData.email || `${dealerData.mobile}@shubhamkrishisewa.com`,
+      address: dealerData.address,
+      gstNumber: dealerData.gstNumber,
+      createdAt: new Date().toISOString()
+    };
+
+    dealers.push(user);
+    localStorage.setItem('ad_dealers', JSON.stringify(dealers));
+
+    const currentSession = this.getCurrentSession();
+    if (!currentSession || currentSession.role !== 'admin') {
+      localStorage.setItem('ad_session', JSON.stringify(user));
+    }
+
+    return { success: true, user };
+  },
+
   // --- SYNC ROUTINE ---
   async syncFromSupabase(): Promise<void> {
+    if (!isSupabaseConfigured()) {
+      console.warn('[Sync] Supabase is unconfigured/placeholder. Running in offline fallback mode.');
+      return;
+    }
+
     try {
       const sessionUser = this.getCurrentSession();
       
@@ -1862,124 +1939,144 @@ export const dbService = {
     initLocalStorage();
     const cleanLogin = loginVal.trim().toLowerCase();
     
-    // Check if email or mobile
-    const isEmail = cleanLogin.includes('@');
-    let emailToSignIn = cleanLogin;
-    
-    if (!isEmail) {
-      // Mobile login lookup via public RPC
-      const { data: foundEmail, error: rpcError } = await supabase.rpc('get_email_by_mobile', { mobile_number: cleanLogin });
-      if (rpcError || !foundEmail) {
-        return { success: false, error: "Dealer account not found. Please register first." };
+    if (!isSupabaseConfigured()) {
+      console.warn("[Auth] Supabase is unconfigured. Falling back to local offline authentication.");
+      return this.localLogin(cleanLogin, passwordVal);
+    }
+
+    try {
+      // Check if email or mobile
+      const isEmail = cleanLogin.includes('@');
+      let emailToSignIn = cleanLogin;
+      
+      if (!isEmail) {
+        // Mobile login lookup via public RPC
+        const { data: foundEmail, error: rpcError } = await supabase.rpc('get_email_by_mobile', { mobile_number: cleanLogin });
+        if (rpcError || !foundEmail) {
+          return { success: false, error: "Dealer account not found. Please register first." };
+        }
+        emailToSignIn = foundEmail;
       }
-      emailToSignIn = foundEmail;
+
+      // Determine password
+      let passwordToUse = passwordVal || '';
+      if (!passwordVal) {
+        // Deterministic derived password for passwordless experience
+        passwordToUse = emailToSignIn + '_sksk_pwa_secret_2026';
+      }
+
+      // Call Supabase auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: emailToSignIn,
+        password: passwordToUse
+      });
+
+      if (authError) {
+        return { success: false, error: authError.message };
+      }
+
+      // Fetch profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError || !profile) {
+        return { success: false, error: 'Failed to load user profile: ' + (profileError?.message || 'Profile not found') };
+      }
+
+      const user: UserProfile = {
+        id: profile.id,
+        role: profile.role,
+        name: profile.name,
+        shopName: profile.shop_name || '',
+        mobile: profile.mobile,
+        email: profile.email,
+        address: profile.address || '',
+        gstNumber: profile.gst_number || '',
+        createdAt: profile.created_at
+      };
+
+      localStorage.setItem('ad_session', JSON.stringify(user));
+      
+      // Sync all database tables immediately
+      await this.syncFromSupabase();
+      
+      return { success: true, user };
+    } catch (err: any) {
+      console.warn("[Auth] Supabase connection failed. Falling back to local offline authentication:", err);
+      return this.localLogin(cleanLogin, passwordVal);
     }
-
-    // Determine password
-    let passwordToUse = passwordVal || '';
-    if (!passwordVal) {
-      // Deterministic derived password for passwordless experience
-      passwordToUse = emailToSignIn + '_sksk_pwa_secret_2026';
-    }
-
-    // Call Supabase auth
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: emailToSignIn,
-      password: passwordToUse
-    });
-
-    if (authError) {
-      return { success: false, error: authError.message };
-    }
-
-    // Fetch profile
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', authData.user.id)
-      .single();
-
-    if (profileError || !profile) {
-      return { success: false, error: 'Failed to load user profile: ' + (profileError?.message || 'Profile not found') };
-    }
-
-    const user: UserProfile = {
-      id: profile.id,
-      role: profile.role,
-      name: profile.name,
-      shopName: profile.shop_name || '',
-      mobile: profile.mobile,
-      email: profile.email,
-      address: profile.address || '',
-      gstNumber: profile.gst_number || '',
-      createdAt: profile.created_at
-    };
-
-    localStorage.setItem('ad_session', JSON.stringify(user));
-    
-    // Sync all database tables immediately
-    await this.syncFromSupabase();
-    
-    return { success: true, user };
   },
 
   async register(dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     initLocalStorage();
     
-    const emailToUse = dealerData.email || `${dealerData.mobile}@shubhamkrishisewa.com`;
-    const passwordToUse = emailToUse + '_sksk_pwa_secret_2026';
-
-    // Sign up in Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: emailToUse,
-      password: passwordToUse
-    });
-
-    if (authError || !authData.user) {
-      return { success: false, error: authError?.message || "Auth registration failed" };
+    if (!isSupabaseConfigured()) {
+      console.warn("[Register] Supabase is unconfigured. Falling back to local offline registration.");
+      return this.localRegister(dealerData);
     }
 
-    // Insert profile row
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
+    try {
+      const emailToUse = dealerData.email || `${dealerData.mobile}@shubhamkrishisewa.com`;
+      const passwordToUse = emailToUse + '_sksk_pwa_secret_2026';
+
+      // Sign up in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: emailToUse,
+        password: passwordToUse
+      });
+
+      if (authError || !authData.user) {
+        return { success: false, error: authError?.message || "Auth registration failed" };
+      }
+
+      // Insert profile row
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          role: 'dealer',
+          name: dealerData.name,
+          shop_name: dealerData.shopName,
+          mobile: dealerData.mobile,
+          email: emailToUse,
+          address: dealerData.address,
+          gst_number: dealerData.gstNumber,
+          status: 'active'
+        });
+
+      if (profileError) {
+        return { success: false, error: "Profile registration failed: " + profileError.message };
+      }
+
+      const user: UserProfile = {
         id: authData.user.id,
         role: 'dealer',
         name: dealerData.name,
-        shop_name: dealerData.shopName,
+        shopName: dealerData.shopName,
         mobile: dealerData.mobile,
         email: emailToUse,
         address: dealerData.address,
-        gst_number: dealerData.gstNumber,
-        status: 'active'
-      });
+        gstNumber: dealerData.gstNumber,
+        createdAt: new Date().toISOString()
+      };
 
-    if (profileError) {
-      return { success: false, error: "Profile registration failed: " + profileError.message };
+      // If registering for another dealer (e.g. seeded by admin), do NOT overwrite current admin session!
+      const currentSession = this.getCurrentSession();
+      if (!currentSession || currentSession.role !== 'admin') {
+        localStorage.setItem('ad_session', JSON.stringify(user));
+      }
+      
+      // Sync from Supabase immediately
+      await this.syncFromSupabase();
+
+      return { success: true, user };
+    } catch (err: any) {
+      console.warn("[Register] Supabase connection failed. Falling back to local offline registration:", err);
+      return this.localRegister(dealerData);
     }
-
-    const user: UserProfile = {
-      id: authData.user.id,
-      role: 'dealer',
-      name: dealerData.name,
-      shopName: dealerData.shopName,
-      mobile: dealerData.mobile,
-      email: emailToUse,
-      address: dealerData.address,
-      gstNumber: dealerData.gstNumber,
-      createdAt: new Date().toISOString()
-    };
-
-    // If registering for another dealer (e.g. seeded by admin), do NOT overwrite current admin session!
-    const currentSession = this.getCurrentSession();
-    if (!currentSession || currentSession.role !== 'admin') {
-      localStorage.setItem('ad_session', JSON.stringify(user));
-    }
-    
-    // Sync from Supabase immediately
-    await this.syncFromSupabase();
-
-    return { success: true, user };
   },
 
   async logout(): Promise<void> {
