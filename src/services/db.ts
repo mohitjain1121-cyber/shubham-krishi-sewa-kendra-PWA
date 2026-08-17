@@ -1990,8 +1990,8 @@ export const dbService = {
       const { data: products } = await supabase.from('products').select('*');
       const { data: settings } = await supabase.from('system_settings').select('*');
 
-      // Auto-migrate if Supabase catalogue is completely empty but configured
-      if (products && products.length === 0) {
+      // Auto-migrate if Supabase catalogue is completely empty, configured, and user is an admin
+      if (products && products.length === 0 && sessionUser && sessionUser.role === 'admin') {
         console.log("[Sync] Supabase catalogue is empty. Auto-migrating local catalogue...");
         const migRes = await this.migrateLocalCatalogueToSupabase();
         if (migRes.success) {
