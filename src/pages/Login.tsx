@@ -73,7 +73,8 @@ export const Login: React.FC = () => {
         mobile: regMobile,
         email: '',
         address: regAddress,
-        gstNumber: regGst
+        gstNumber: regGst,
+        status: 'active'
       }, regPassword);
       setLoading(false);
       if (!res.success) {

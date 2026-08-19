@@ -962,7 +962,8 @@ export const dbService = {
           email: adminMatch.email,
           address: 'Corporate Headquarters',
           gstNumber: 'CorporateGST',
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          status: 'active'
         };
         localStorage.setItem('ad_session', JSON.stringify(user));
         return { success: true, user };
@@ -2124,7 +2125,8 @@ export const dbService = {
         email: profile.email,
         address: profile.address || '',
         gstNumber: profile.gst_number || '',
-        createdAt: profile.created_at
+        createdAt: profile.created_at,
+        status: profile.status || 'active'
       };
 
       localStorage.setItem('ad_session', JSON.stringify(user));
@@ -2229,7 +2231,8 @@ export const dbService = {
         email: emailToStore,
         address: dealerData.address,
         gstNumber: dealerData.gstNumber,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'active'
       };
 
       // If registering for another dealer (e.g. seeded by admin), do NOT overwrite current admin/dealer session!
