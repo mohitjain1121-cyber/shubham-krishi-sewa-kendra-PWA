@@ -164,7 +164,7 @@ export const AdminDashboard: React.FC = () => {
                 {orders.slice(0, 8).map((order) => (
                   <tr key={order.id} className="hover:bg-slate-50/50 transition">
                     <td className="py-3.5 px-5 font-mono font-extrabold text-green-700">
-                      {order.id}
+                      {order.orderNumber || order.id}
                     </td>
                     <td className="py-3.5 px-5 font-semibold text-slate-800">
                       {order.shopName}

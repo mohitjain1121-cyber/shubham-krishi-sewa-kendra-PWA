@@ -73,11 +73,11 @@ export const CompanyDetails: React.FC = () => {
       {/* Company Profile Header Block */}
       <div className="bg-white border-b border-slate-150 p-5 flex items-center space-x-4">
         {company.logo && !logoError ? (
-          <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-2 flex-shrink-0">
+          <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1.5 flex-shrink-0">
             <img
               src={company.logo}
               alt={company.name}
-              className="max-h-full max-w-full object-contain rounded-full"
+              className="max-h-full max-w-full object-contain"
               onError={() => setLogoError(true)}
             />
           </div>

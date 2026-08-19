@@ -67,27 +67,25 @@ export const AllCompanies: React.FC = () => {
                     setSelectedCompanyFilter(comp.id);
                     setView('catalog');
                   }}
-                  className="flex flex-col items-center justify-between p-4.5 rounded-2xl border border-slate-205 bg-white hover:border-slate-350 hover:shadow-md transition-all duration-150 text-center cursor-pointer min-h-[148px]"
+                  className="flex flex-col items-center justify-between rounded-2xl border border-slate-205 bg-white hover:border-slate-350 hover:shadow-md transition-all duration-150 text-center cursor-pointer min-h-[160px] overflow-hidden w-full"
                 >
-                  <div className="flex-1 flex items-center justify-center w-full mb-3">
-                    {comp.logo && !logoErrors[comp.id] ? (
-                      <div className="h-14 w-full flex items-center justify-center p-0.5 animate-fade-in">
-                        <img
-                          src={comp.logo}
-                          alt={comp.name}
-                          className="max-h-full max-w-full object-contain rounded-full"
-                          onError={() => setLogoErrors(prev => ({ ...prev, [comp.id]: true }))}
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-green-50 border border-green-100 text-[#12873A] flex items-center justify-center font-black text-sm uppercase">
-                        {comp.name.slice(0, 2)}
-                      </div>
-                    )}
-                  </div>
+                  {comp.logo && !logoErrors[comp.id] ? (
+                    <div className="w-full h-24 bg-slate-50/40 flex items-center justify-center p-3 border-b border-slate-100/80 animate-fade-in">
+                      <img
+                        src={comp.logo}
+                        alt={comp.name}
+                        className="max-h-full max-w-full object-contain"
+                        onError={() => setLogoErrors(prev => ({ ...prev, [comp.id]: true }))}
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full h-24 bg-green-50/40 border-b border-green-100/50 text-[#12873A] flex items-center justify-center font-black text-2xl uppercase">
+                      {comp.name.slice(0, 2)}
+                    </div>
+                  )}
                   
-                  <div className="w-full">
-                    <h4 className="font-extrabold text-slate-800 text-xs truncate leading-tight tracking-wide">
+                  <div className="p-3 w-full flex flex-col items-center justify-center">
+                    <h4 className="font-extrabold text-slate-800 text-xs truncate leading-tight tracking-wide w-full">
                       {comp.name}
                     </h4>
                     <span className="text-[10px] text-[#12873A] font-bold block mt-1">

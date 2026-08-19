@@ -559,7 +559,7 @@ export const AdminOrders: React.FC = () => {
               >
                 <div className="space-y-1.5 min-w-0 pr-2">
                   <div className="flex items-center space-x-2">
-                    <span className="font-mono font-extrabold text-green-700 text-[12px]">{order.id}</span>
+                    <span className="font-mono font-extrabold text-green-700 text-[12px]">{order.orderNumber || order.id}</span>
                     <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase ${getOrderStatusColor(order.orderStatus)}`}>
                       {getStatusText(order.orderStatus).toUpperCase()}
                     </span>
@@ -596,7 +596,7 @@ export const AdminOrders: React.FC = () => {
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center space-x-2">
                   <span>Order Invoice Detail</span>
-                  <span className="font-mono text-green-700 font-extrabold text-base">{selectedOrder.id}</span>
+                  <span className="font-mono text-green-700 font-extrabold text-base">{selectedOrder.orderNumber || selectedOrder.id}</span>
                   <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase ml-2 ${getOrderStatusColor(selectedOrder.orderStatus)}`}>
                     {getStatusText(selectedOrder.orderStatus).toUpperCase()}
                   </span>

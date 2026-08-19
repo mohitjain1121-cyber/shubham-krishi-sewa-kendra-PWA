@@ -21,6 +21,7 @@ export const AdminDealers: React.FC = () => {
     const testMobile = `98765${randomSuffix}`;
     const testEmail = `dealer_${randomSuffix}@shubhamkrishisewa.com`;
 
+    const testPassword = `dealer${randomSuffix}`;
     try {
       const res = await dbService.register({
         name: testName,
@@ -29,10 +30,10 @@ export const AdminDealers: React.FC = () => {
         email: testEmail,
         address: "Industrial Area, Phase 1, Kurukshetra, Haryana",
         gstNumber: `06ABCDE${randomSuffix}F1Z0`
-      });
+      }, testPassword);
 
       if (res.success) {
-        alert(`Successfully seeded test dealer!\n\nName: ${testName}\nMobile: ${testMobile}\nEmail: ${testEmail}\nPassword (derived): ${testEmail}_sksk_pwa_secret_2026`);
+        alert(`Successfully seeded test dealer!\n\nName: ${testName}\nMobile: ${testMobile}\nEmail: ${testEmail}\nPassword: ${testPassword}`);
         loadData();
       } else {
         alert("Failed to seed test dealer: " + res.error);
@@ -72,6 +73,7 @@ export const AdminDealers: React.FC = () => {
   };
 
   const filteredDealers = dealers.filter(d => {
+    if (d.status === 'inactive') return false; // Hide deactivated test/demo dealers completely
     const query = searchQuery.toLowerCase();
     return (
       d.name.toLowerCase().includes(query) ||
@@ -184,8 +186,12 @@ export const AdminDealers: React.FC = () => {
                   <td className="py-3.5 px-5 text-slate-650">{dealer.mobile}</td>
                   <td className="py-3.5 px-5 text-slate-500">{dealer.createdAt.split('T')[0]}</td>
                   <td className="py-3.5 px-5 text-center">
-                    <span className="bg-green-50 text-green-700 border border-green-100 px-2 py-0.5 rounded-full text-[9px] font-bold">
-                      ACTIVE
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase ${
+                      dealer.status === 'inactive'
+                        ? 'bg-rose-50 text-rose-700 border-rose-150'
+                        : 'bg-green-50 text-green-700 border-green-100'
+                    }`}>
+                      {dealer.status || 'active'}
                     </span>
                   </td>
                   <td className="py-3.5 px-5 text-center font-bold text-slate-800">
@@ -224,7 +230,13 @@ export const AdminDealers: React.FC = () => {
                 <p className="text-slate-650">{dealer.name} ({dealer.mobile})</p>
                 <p className="text-[10px] text-slate-450 truncate">Location: {dealer.address}</p>
                 <div className="flex space-x-2 pt-1">
-                  <span className="bg-green-50 text-green-750 text-[9px] font-bold px-1.5 py-0.2 rounded border border-green-100">ACTIVE</span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border uppercase ${
+                    dealer.status === 'inactive'
+                      ? 'bg-rose-50 text-rose-750 border-rose-100'
+                      : 'bg-green-50 text-green-750 border-green-100'
+                  }`}>
+                    {dealer.status || 'active'}
+                  </span>
                   <span className="text-[9px] font-semibold text-slate-500">{getDealerOrderCount(dealer.id)} Orders</span>
                 </div>
               </div>
@@ -339,7 +351,7 @@ export const AdminDealers: React.FC = () => {
                     <tbody className="divide-y divide-slate-100">
                       {dealerOrders.map(order => (
                         <tr key={order.id} className="hover:bg-slate-50/20">
-                          <td className="py-2.5 px-4 font-mono font-extrabold text-green-700">{order.id}</td>
+                          <td className="py-2.5 px-4 font-mono font-extrabold text-green-700">{order.orderNumber || order.id}</td>
                           <td className="py-2.5 px-4 text-center text-slate-500">{order.date}</td>
                           <td className="py-2.5 px-4 text-center text-slate-600">
                             {order.paymentMethod === 'pay_now' ? 'UPI' : 'Credit'}

@@ -43,7 +43,7 @@ interface AppContextType {
   
   // Auth actions
   login: (loginVal: string, passwordVal?: string) => Promise<{ success: boolean; error?: string }>;
-  register: (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>) => Promise<{ success: boolean; error?: string }>;
+  register: (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>, passwordVal: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   
   // Navigation actions
@@ -149,8 +149,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: res.success, error: res.error };
   };
 
-  const register = async (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>) => {
-    const res = await dbService.register(dealerData);
+  const register = async (dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>, passwordVal: string) => {
+    const res = await dbService.register(dealerData, passwordVal);
     if (res.success && res.user) {
       setUser(res.user);
       setCart([]);

@@ -16,7 +16,7 @@ export const Login: React.FC = () => {
   const [regName, setRegName] = useState('');
   const [regShopName, setRegShopName] = useState('');
   const [regMobile, setRegMobile] = useState('');
-  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
   const [regAddress, setRegAddress] = useState('');
   const [regGst, setRegGst] = useState('');
 
@@ -24,6 +24,10 @@ export const Login: React.FC = () => {
     e.preventDefault();
     if (!loginVal) {
       setError("Please enter your registered mobile number or email");
+      return;
+    }
+    if (!password) {
+      setError("Please enter your password");
       return;
     }
     
@@ -44,13 +48,18 @@ export const Login: React.FC = () => {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!regName || !regShopName || !regMobile || !regAddress) {
+    if (!regName || !regShopName || !regMobile || !regAddress || !regPassword) {
       setError("Please fill in all required fields marked with *");
       return;
     }
 
     if (regMobile.length < 10) {
       setError("Please enter a valid 10-digit mobile number");
+      return;
+    }
+
+    if (regPassword.length < 6) {
+      setError("Password must be at least 6 characters long");
       return;
     }
 
@@ -62,10 +71,10 @@ export const Login: React.FC = () => {
         name: regName,
         shopName: regShopName,
         mobile: regMobile,
-        email: regEmail,
+        email: '',
         address: regAddress,
         gstNumber: regGst
-      });
+      }, regPassword);
       setLoading(false);
       if (!res.success) {
         setError(res.error || "Registration failed");
@@ -86,7 +95,7 @@ export const Login: React.FC = () => {
 
   const autofillDealer = () => {
     setLoginVal('9876543211');
-    setPassword('');
+    setPassword('dealer123');
     setIsRegisterMode(false);
     setError(null);
   };
@@ -134,18 +143,18 @@ export const Login: React.FC = () => {
                 </div>
               </div>
 
-              {/* Optional password for admin, passwordless for dealers */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-450 mb-1.5 uppercase tracking-wider">
-                  Password <span className="text-slate-400 font-normal">(Required only for Admin login)</span>
+                  Password *
                 </label>
                 <div className="relative">
                   <KeyRound className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400" />
                   <input
                     type="password"
+                    required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password (if admin)"
+                    placeholder="Enter your password"
                     className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#12873A] text-sm text-slate-800 transition-all"
                   />
                 </div>
@@ -204,31 +213,34 @@ export const Login: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-450 mb-1.5 uppercase tracking-wider">
-                      Mobile Number *
-                    </label>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-450 mb-1.5 uppercase tracking-wider">
+                    Mobile Number *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    pattern="[0-9]{10}"
+                    value={regMobile}
+                    onChange={(e) => setRegMobile(e.target.value.replace(/\D/g, '').slice(0,10))}
+                    placeholder="10-digit mobile number"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#12873A] text-sm text-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-450 mb-1.5 uppercase tracking-wider">
+                    Password * (Minimum 6 characters)
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-3 w-4.5 h-4.5 text-slate-400" />
                     <input
-                      type="tel"
+                      type="password"
                       required
-                      pattern="[0-9]{10}"
-                      value={regMobile}
-                      onChange={(e) => setRegMobile(e.target.value.replace(/\D/g, '').slice(0,10))}
-                      placeholder="10-digit number"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#12873A] text-sm text-slate-800"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-450 mb-1.5 uppercase tracking-wider">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="Optional"
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#12873A] text-sm text-slate-800"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="Create a strong password"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#12873A] text-sm text-slate-800"
                     />
                   </div>
                 </div>
@@ -327,7 +339,7 @@ export const Login: React.FC = () => {
               onClick={autofillDealer}
               className="bg-amber-100/50 hover:bg-amber-100 border border-amber-200 text-amber-900 px-3 py-2 rounded-xl font-bold transition text-left cursor-pointer"
             >
-              Dealer: <span className="font-mono font-normal">Vijay Kumar (Mobile: 9876543211)</span>
+              Dealer: <span className="font-mono font-normal">Vijay Kumar (Mobile: 9876543211 / Password: dealer123)</span>
             </button>
           </div>
         </div>

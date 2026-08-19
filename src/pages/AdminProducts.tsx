@@ -828,12 +828,12 @@ export const AdminProducts: React.FC = () => {
 
               {/* Photo link URL */}
               <div>
-                <label className="block text-slate-500 font-semibold mb-1 uppercase tracking-wider text-[9px]">Product Image Link / URL</label>
+                <label className="block text-slate-500 font-semibold mb-1 uppercase tracking-wider text-[9px]">Product Image Key / URL</label>
                 <input
-                  type="url"
+                  type="text"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/..."
+                  placeholder="e.g. products/coragen.jpg or https://images.unsplash.com/..."
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-slate-850 focus:outline-none focus:ring-1 focus:ring-green-500"
                 />
               </div>

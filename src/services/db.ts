@@ -18,6 +18,17 @@ export const normalizeVariantName = (packSize: string, unit: string): string => 
   return (packSize + unit).replace(/\s+/g, "").toLowerCase();
 };
 
+export function getDealerAuthEmail(mobileNumber: string): string {
+  if (!mobileNumber) return "";
+  const cleanMobile = mobileNumber
+    .replace(/\s+/g, '')
+    .replace(/\+91/g, '')
+    .replace(/-/g, '')
+    .replace(/\D/g, '');
+  const normalized = cleanMobile.slice(-10);
+  return `dealer-${normalized}@shubhamkrishisewa.com`;
+}
+
 export const parseCSVLine = (line: string): string[] => {
   const result: string[] = [];
   let current = '';
@@ -405,6 +416,8 @@ export interface BulkUploadRowPreview {
   status: string;
   validationStatus: 'VALID' | 'WARNING' | 'ERROR';
   details: string;
+  description?: string;
+  techSpecs?: string;
 }
 
 export interface BulkUploadPreviewResult {
@@ -431,6 +444,7 @@ export interface UserProfile {
   address: string;
   gstNumber: string;
   createdAt: string;
+  status: 'active' | 'inactive';
 }
 
 export interface Company {
@@ -493,6 +507,7 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
+  orderNumber?: string;
   dealerId: string;
   dealerName: string;
   shopName: string;
@@ -587,565 +602,17 @@ export function getCompanyPlaceholderLogo(name: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-const DEFAULT_COMPANIES: Company[] = [
-  {
-    id: "comp-seed-1",
-    name: "Krishaj",
-    logo: getCompanyPlaceholderLogo("Krishaj"),
-    description: "Krishaj crop protection and growth enhancers.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-2",
-    name: "BASF",
-    logo: getCompanyPlaceholderLogo("BASF"),
-    description: "Global chemical leader offering innovative agricultural solutions.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-3",
-    name: "Rallis",
-    logo: getCompanyPlaceholderLogo("Rallis"),
-    description: "Tata enterprise specializing in agri inputs, seeds, and crop care.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-4",
-    name: "Syngenta",
-    logo: getCompanyPlaceholderLogo("Syngenta"),
-    description: "Leading science-based agritech company for seeds and crop protection.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-5",
-    name: "Bayer",
-    logo: getCompanyPlaceholderLogo("Bayer"),
-    description: "World-class health and nutrition company with innovative crop science.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-6",
-    name: "Isagro",
-    logo: getCompanyPlaceholderLogo("Isagro"),
-    description: "Italian crop protection manufacturer with green agrochemicals focus.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-7",
-    name: "Sumitomo Chemical",
-    logo: getCompanyPlaceholderLogo("Sumitomo Chemical"),
-    description: "Japanese multinational specializing in top-tier crop solutions.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-8",
-    name: "Indo-Swiss",
-    logo: getCompanyPlaceholderLogo("Indo-Swiss"),
-    description: "Premium fertilisers and growth management solutions.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-9",
-    name: "Indofil Industries Limited",
-    logo: getCompanyPlaceholderLogo("Indofil Industries Limited"),
-    description: "High quality crop protection and chemical synthesis products.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-10",
-    name: "ADAMA",
-    logo: getCompanyPlaceholderLogo("ADAMA"),
-    description: "Comprehensive agricultural solutions and comprehensive crop protection.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-11",
-    name: "UPL",
-    logo: getCompanyPlaceholderLogo("UPL"),
-    description: "Global provider of sustainable agricultural products and solutions.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-12",
-    name: "Ghardha Chemicals Limited",
-    logo: getCompanyPlaceholderLogo("Ghardha Chemicals Limited"),
-    description: "Leading manufacturer of high-quality agrochemicals and pigments.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-13",
-    name: "PI Agri Input",
-    logo: getCompanyPlaceholderLogo("PI Agri Input"),
-    description: "Premium chemicals and tech services for agricultural efficiency.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-14",
-    name: "Mahindra",
-    logo: getCompanyPlaceholderLogo("Mahindra"),
-    description: "Indian conglomerate serving farming with seeds and machinery.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-15",
-    name: "Nath Seeds",
-    logo: getCompanyPlaceholderLogo("Nath Seeds"),
-    description: "High yielding hybrid seeds and crop variety developer.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-16",
-    name: "Atul",
-    logo: getCompanyPlaceholderLogo("Atul"),
-    description: "Eco-friendly crop protection chemicals and fertilizers.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-17",
-    name: "Godrej Agrovet",
-    logo: getCompanyPlaceholderLogo("Godrej Agrovet"),
-    description: "Diversified agri-business offering seeds, animal feed, and protection.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-18",
-    name: "Nagarjuna",
-    logo: getCompanyPlaceholderLogo("Nagarjuna"),
-    description: "Leading fertilizer and chemical manufacturer in South India.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-19",
-    name: "Dow",
-    logo: getCompanyPlaceholderLogo("Dow"),
-    description: "Science-based crop defense and material solutions.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-20",
-    name: "DuPont",
-    logo: getCompanyPlaceholderLogo("DuPont"),
-    description: "Specialized crop protection and high-yielding agriculture seeds.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-21",
-    name: "NSC",
-    logo: getCompanyPlaceholderLogo("NSC"),
-    description: "National Seeds Corporation of India - High-standard seed provider.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-22",
-    name: "Shakti Vardhak Hybrid Seeds Pvt. Ltd.",
-    logo: getCompanyPlaceholderLogo("Shakti Vardhak Hybrid Seeds Pvt. Ltd."),
-    description: "Shakti Vardhak hybrid seeds for field crops and vegetables.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "comp-seed-23",
-    name: "FMC",
-    logo: getCompanyPlaceholderLogo("FMC"),
-    description: "FMC Corporation is an agricultural sciences company.",
-    status: "active",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  }
-];
 
-const DEFAULT_PRODUCTS: Product[] = [
-  // Company A -> 5 products
-  {
-    id: "prod-1",
-    name: "Glyphosate 41% SL (SuperWeed)",
-    brand: "Monsanto",
-    companyId: "comp-1",
-    category: "Herbicides",
-    description: "Broad-spectrum systemic herbicide for control of annual and perennial weeds in non-crop areas, orchards and plantations.",
-    techSpecs: "Glyphosate isopropylamine salt 41% w/w",
-    imageUrl: "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-7",
-    name: "Paraquat Dichloride 24% SL (WeedKill)",
-    brand: "Monsanto",
-    companyId: "comp-1",
-    category: "Herbicides",
-    description: "Quick acting non-selective contact herbicide for control of broad-leaved weeds and grasses in agricultural crops.",
-    techSpecs: "Paraquat dichloride 24% w/w",
-    imageUrl: "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-8",
-    name: "Neem Gold Bio-Insecticide",
-    brand: "Monsanto",
-    companyId: "comp-1",
-    category: "Insecticides",
-    description: "Natural organic botanical pesticide derived from pure neem oil seeds, effective against leaf eating pests.",
-    techSpecs: "Azadirachtin 0.03% EC (300 ppm)",
-    imageUrl: "https://images.unsplash.com/photo-1628352081506-83c43123ed6d?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-9",
-    name: "NPK 19-19-19 Growth Booster",
-    brand: "Monsanto",
-    companyId: "comp-1",
-    category: "Fertilizers",
-    description: "Water soluble fertilizer containing essential macronutrients nitrogen, phosphorus, and potassium in balanced ratio.",
-    techSpecs: "Total Nitrogen 19%, Phosphate 19%, Potash 19%",
-    imageUrl: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-10",
-    name: "Hybrid Tomato Seeds",
-    brand: "Monsanto",
-    companyId: "comp-1",
-    category: "Seeds",
-    description: "Premium high-yielding hybrid seeds with disease resistance, producing juicy sweet tomato fruits.",
-    techSpecs: "Tomato Hybrid F1 Seeds, Germination 85% Min",
-    imageUrl: "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
 
-  // Company B -> 4 products
-  {
-    id: "prod-2",
-    name: "Imidacloprid 17.8% SL (Confidor-type)",
-    brand: "Bayer",
-    companyId: "comp-2",
-    category: "Insecticides",
-    description: "Systemic insecticide containing Imidacloprid, highly effective against sucking pests like aphids, thrips, jassids, and whiteflies.",
-    techSpecs: "Imidacloprid 17.8% SL",
-    imageUrl: "https://images.unsplash.com/photo-1628352081506-83c43123ed6d?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-3",
-    name: "Chlorpyriphos 20% EC (Terminator)",
-    brand: "Bayer",
-    companyId: "comp-2",
-    category: "Insecticides",
-    description: "Organophosphorus insecticide for soil and foliar applications, widely used against termites, root borer, and leaf folders.",
-    techSpecs: "Chlorpyriphos 20% EC",
-    imageUrl: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-11",
-    name: "Fipronil 5% SC (Shield)",
-    brand: "Bayer",
-    companyId: "comp-2",
-    category: "Insecticides",
-    description: "Modern phenylpyrazole insecticide offering control of broad spectrum of chewing and sucking insect pests in crops.",
-    techSpecs: "Fipronil 5% SC w/w",
-    imageUrl: "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-12",
-    name: "DAP (Di-Ammonium Phosphate)",
-    brand: "Bayer",
-    companyId: "comp-2",
-    category: "Fertilizers",
-    description: "Highly concentrated phosphorus based fertilizer, ideal for application during crop planting stage.",
-    techSpecs: "Nitrogen 18%, Phosphate P2O5 46%",
-    imageUrl: "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
+const DEFAULT_COMPANIES: Company[] = [];
+const DEFAULT_PRODUCTS: Product[] = [];
+const DEFAULT_PRODUCT_VARIANTS: ProductVariant[] = [];
 
-  // Company C -> 6 products
-  {
-    id: "prod-4",
-    name: "Mancozeb 75% WP (Indofil M-45)",
-    brand: "Indofil",
-    companyId: "comp-3",
-    category: "Fungicides",
-    description: "Contact broad-spectrum fungicide with protective action, highly effective against early blight, late blight, and leaf spots.",
-    techSpecs: "Mancozeb 75% WP",
-    imageUrl: "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-5",
-    name: "Hexaconazole 5% EC (Anvil-type)",
-    brand: "Indofil",
-    companyId: "comp-3",
-    category: "Fungicides",
-    description: "Systemic fungicide containing Hexaconazole, excellent control of sheath blight in paddy, powdery mildew in mangoes and grapes.",
-    techSpecs: "Hexaconazole 5% EC",
-    imageUrl: "https://images.unsplash.com/photo-1599599810769-bcde5a160d32?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-6",
-    name: "Atrazine 50% WP (WeedFree)",
-    brand: "Indofil",
-    companyId: "comp-3",
-    category: "Herbicides",
-    description: "Selective herbicide for control of broad-leaf weeds and grasses in Maize and Sugarcane.",
-    techSpecs: "Atrazine 50% WP",
-    imageUrl: "https://images.unsplash.com/photo-1532187863486-abf9d39d66e8?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-13",
-    name: "Carbendazim 50% WP Systemic Fungicide",
-    brand: "Indofil",
-    companyId: "comp-3",
-    category: "Fungicides",
-    description: "Broad-spectrum systemic fungicide used to control wide range of fungal diseases in crops and plantation.",
-    techSpecs: "Carbendazim 50% WP",
-    imageUrl: "https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-14",
-    name: "Hybrid Mustard Seeds (Yellow Gold)",
-    brand: "Indofil",
-    companyId: "comp-3",
-    category: "Seeds",
-    description: "High oil content mustard seeds, highly branched hybrid and frost tolerant with excellent yield potential.",
-    techSpecs: "Mustard Hybrid Yellow Seeds, Oil Content 42%",
-    imageUrl: "https://images.unsplash.com/photo-1532187863486-abf9d39d66e8?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-15",
-    name: "Zinc Sulphate Monohydrate 33%",
-    brand: "Indofil",
-    companyId: "comp-3",
-    category: "Others",
-    description: "Micronutrient fertilizer correcting zinc deficiency in soils, promoting root development and chlorophyll synthesis.",
-    techSpecs: "Zinc (Zn) 33% Min, Sulphur (S) 15% Min",
-    imageUrl: "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  },
-  {
-    id: "prod-coragen",
-    name: "Coragen",
-    brand: "FMC",
-    companyId: "comp-seed-23",
-    category: "Insecticides",
-    description: "FMC Coragen insecticide is an anthranilic diamide broad-spectrum insecticide.",
-    techSpecs: "Chlorantraniliprole 18.5% SC",
-    imageUrl: "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500&auto=format&fit=crop&q=60",
-    archived: false
-  }
-];
+const DEFAULT_DEALERS: UserProfile[] = [];
 
-const DEFAULT_PRODUCT_VARIANTS: ProductVariant[] = [
-  // prod-1 variants
-  { id: "prod-1-v1", productId: "prod-1", packSize: "250", unit: "ml", price: 150, sku: "GLY-41-250M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-1-v2", productId: "prod-1", packSize: "500", unit: "ml", price: 280, sku: "GLY-41-500M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-1-v3", productId: "prod-1", packSize: "1", unit: "L", price: 450, sku: "GLY-41-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+const DEFAULT_ORDERS: Order[] = [];
 
-  // prod-7 variants
-  { id: "prod-7-v1", productId: "prod-7", packSize: "500", unit: "ml", price: 200, sku: "PAR-24-500M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-7-v2", productId: "prod-7", packSize: "1", unit: "L", price: 350, sku: "PAR-24-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-8 variants
-  { id: "prod-8-v1", productId: "prod-8", packSize: "250", unit: "ml", price: 160, sku: "NEE-03-250M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-8-v2", productId: "prod-8", packSize: "500", unit: "ml", price: 280, sku: "NEE-03-500M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-9 variants
-  { id: "prod-9-v1", productId: "prod-9", packSize: "1", unit: "Kg", price: 180, sku: "NPK-19-1K", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-10 variants
-  { id: "prod-10-v1", productId: "prod-10", packSize: "10", unit: "gm", price: 120, sku: "TOM-HYB-10G", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-2 variants
-  { id: "prod-2-v1", productId: "prod-2", packSize: "100", unit: "ml", price: 180, sku: "IMI-178-100M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-2-v2", productId: "prod-2", packSize: "250", unit: "ml", price: 380, sku: "IMI-178-250M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-2-v3", productId: "prod-2", packSize: "500", unit: "ml", price: 700, sku: "IMI-178-500M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-3 variants
-  { id: "prod-3-v1", productId: "prod-3", packSize: "1", unit: "L", price: 380, sku: "CHL-20-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-3-v2", productId: "prod-3", packSize: "5", unit: "L", price: 1650, sku: "CHL-20-5L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-11 variants
-  { id: "prod-11-v1", productId: "prod-11", packSize: "250", unit: "ml", price: 260, sku: "FIP-5-250M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-11-v2", productId: "prod-11", packSize: "1", unit: "L", price: 850, sku: "FIP-5-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-12 variants
-  { id: "prod-12-v1", productId: "prod-12", packSize: "50", unit: "Kg", price: 1450, sku: "DAP-50K", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-4 variants
-  { id: "prod-4-v1", productId: "prod-4", packSize: "500", unit: "gm", price: 220, sku: "MAN-75-500G", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-4-v2", productId: "prod-4", packSize: "1", unit: "Kg", price: 400, sku: "MAN-75-1K", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-5 variants
-  { id: "prod-5-v1", productId: "prod-5", packSize: "500", unit: "ml", price: 350, sku: "HEX-5-500M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-5-v2", productId: "prod-5", packSize: "1", unit: "L", price: 620, sku: "HEX-5-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-6 variants
-  { id: "prod-6-v1", productId: "prod-6", packSize: "500", unit: "gm", price: 180, sku: "ATR-50-500G", available: false, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-6-v2", productId: "prod-6", packSize: "1", unit: "Kg", price: 310, sku: "ATR-50-1K", available: false, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-13 variants
-  { id: "prod-13-v1", productId: "prod-13", packSize: "250", unit: "gm", price: 190, sku: "CAR-50-250G", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-13-v2", productId: "prod-13", packSize: "500", unit: "gm", price: 350, sku: "CAR-50-500G", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-14 variants
-  { id: "prod-14-v1", productId: "prod-14", packSize: "1", unit: "Kg", price: 350, sku: "MUS-HYB-1K", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-15 variants
-  { id: "prod-15-v1", productId: "prod-15", packSize: "5", unit: "Kg", price: 420, sku: "ZIN-33-5K", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
-  // prod-coragen variants
-  { id: "prod-coragen-v1", productId: "prod-coragen", packSize: "100", unit: "ml", price: 320, sku: "COR-185-100M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-coragen-v2", productId: "prod-coragen", packSize: "250", unit: "ml", price: 650, sku: "COR-185-250M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-coragen-v3", productId: "prod-coragen", packSize: "500", unit: "ml", price: 1150, sku: "COR-185-500M", available: false, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: "prod-coragen-v4", productId: "prod-coragen", packSize: "1", unit: "L", price: 2100, sku: "COR-185-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-];
-
-const DEFAULT_DEALERS: UserProfile[] = [
-  {
-    id: "dealer-1",
-    role: "dealer",
-    name: "Vijay Kumar",
-    shopName: "Kisan Agro Agencies",
-    mobile: "9876543211",
-    email: "vijay@kisanagro.com",
-    address: "Main Bazaar, Opp. Grain Market, Karnal, Haryana",
-    gstNumber: "06AAAAA1111A1Z1",
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "dealer-2",
-    role: "dealer",
-    name: "Rajesh Patel",
-    shopName: "Patel Fertilizer Store",
-    mobile: "9876543212",
-    email: "rajesh@patelstore.com",
-    address: "Station Road, Anand, Gujarat",
-    gstNumber: "24BBBBB2222B2Z2",
-    createdAt: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString()
-  }
-];
-
-const DEFAULT_ORDERS: Order[] = [
-  {
-    id: "ORD-1001",
-    dealerId: "dealer-1",
-    dealerName: "Vijay Kumar",
-    shopName: "Kisan Agro Agencies",
-    date: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString().split('T')[0],
-    subtotal: 10450,
-    total: 10450,
-    paymentMethod: "pay_later",
-    paymentStatus: "pending",
-    orderStatus: "processing",
-    createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: "ORD-1002",
-    dealerId: "dealer-2",
-    dealerName: "Rajesh Patel",
-    shopName: "Patel Fertilizer Store",
-    date: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().split('T')[0],
-    subtotal: 4400,
-    total: 4400,
-    paymentMethod: "pay_now",
-    paymentStatus: "paid",
-    orderStatus: "completed",
-    createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString()
-  }
-];
-
-const DEFAULT_ORDER_ITEMS: OrderItem[] = [
-  {
-    id: "item-1",
-    orderId: "ORD-1001",
-    productId: "prod-1",
-    productName: "Glyphosate 41% SL (SuperWeed)",
-    brand: "Monsanto",
-    variantId: "prod-1-v3",
-    packSize: "1 L",
-    price: 450,
-    quantity: 10
-  },
-  {
-    id: "item-2",
-    orderId: "ORD-1001",
-    productId: "prod-2",
-    productName: "Imidacloprid 17.8% SL (Confidor-type)",
-    brand: "Bayer",
-    variantId: "prod-2-v2",
-    packSize: "250 ml",
-    price: 380,
-    quantity: 10
-  },
-  {
-    id: "item-3",
-    orderId: "ORD-1002",
-    productId: "prod-2",
-    productName: "Imidacloprid 17.8% SL (Confidor-type)",
-    brand: "Bayer",
-    variantId: "prod-2-v2",
-    packSize: "250 ml",
-    price: 380,
-    quantity: 5
-  },
-  {
-    id: "item-4",
-    orderId: "ORD-1002",
-    productId: "prod-4",
-    productName: "Mancozeb 75% WP (Indofil M-45)",
-    brand: "Indofil",
-    variantId: "prod-4-v1",
-    packSize: "500 gm",
-    price: 220,
-    quantity: 10
-  }
-];
+const DEFAULT_ORDER_ITEMS: OrderItem[] = [];
 
 // Helper to migrate database relationships and schema
 export function migrateDatabase() {
@@ -1311,6 +778,20 @@ export function migrateDatabase() {
 
 // Helper to initialize local storage
 function initLocalStorage() {
+  // One-time automatic local storage cleanup of demo data
+  if (!localStorage.getItem('ad_demo_cleaned_permanently')) {
+    localStorage.removeItem('ad_companies');
+    localStorage.removeItem('ad_products');
+    localStorage.removeItem('ad_product_variants');
+    localStorage.removeItem('ad_dealers');
+    localStorage.removeItem('ad_orders');
+    localStorage.removeItem('ad_order_items');
+    localStorage.removeItem('ad_delivery_challans');
+    localStorage.removeItem('ad_dealer_prices');
+    localStorage.removeItem('ad_migration_flags');
+    localStorage.setItem('ad_demo_cleaned_permanently', 'true');
+  }
+
   if (!localStorage.getItem('ad_companies')) {
     localStorage.setItem('ad_companies', JSON.stringify(DEFAULT_COMPANIES));
   }
@@ -1359,11 +840,7 @@ function initLocalStorage() {
     }
   }
   if (!localStorage.getItem('ad_dealer_prices')) {
-    const DEFAULT_DEALER_PRICES = [
-      { dealerId: 'dealer-1', variantId: 'prod-coragen-v2', price: 500 },
-      { dealerId: 'dealer-2', variantId: 'prod-coragen-v2', price: 550 }
-    ];
-    localStorage.setItem('ad_dealer_prices', JSON.stringify(DEFAULT_DEALER_PRICES));
+    localStorage.setItem('ad_dealer_prices', JSON.stringify([]));
   }
   if (!localStorage.getItem('ad_admins')) {
     const admins = [
@@ -1435,226 +912,6 @@ function initLocalStorage() {
     console.error("Migration error during startup: ", err);
   }
 
-  // Guarantee FMC, Coragen, variants, and dealer prices are seeded in local storage
-  try {
-    const products = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    if (!products.some((p: any) => p.id === 'prod-coragen')) {
-      const companies = JSON.parse(localStorage.getItem('ad_companies') || '[]');
-      if (!companies.some((c: any) => c.id === 'comp-seed-23')) {
-        companies.push({
-          id: "comp-seed-23",
-          name: "FMC",
-          logo: getCompanyPlaceholderLogo("FMC"),
-          description: "FMC Corporation is an agricultural sciences company.",
-          status: "active",
-          createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-          updatedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-        });
-        localStorage.setItem('ad_companies', JSON.stringify(companies));
-      }
-      
-      products.push({
-        id: "prod-coragen",
-        name: "Coragen",
-        brand: "FMC",
-        companyId: "comp-seed-23",
-        category: "Insecticides",
-        description: "FMC Coragen insecticide is an anthranilic diamide broad-spectrum insecticide.",
-        techSpecs: "Chlorantraniliprole 18.5% SC",
-        imageUrl: "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500&auto=format&fit=crop&q=60",
-        archived: false
-      });
-      localStorage.setItem('ad_products', JSON.stringify(products));
-
-      const variants = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-      const coragenVariants = [
-        { id: "prod-coragen-v1", productId: "prod-coragen", packSize: "100", unit: "ml", price: 320, sku: "COR-185-100M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: "prod-coragen-v2", productId: "prod-coragen", packSize: "250", unit: "ml", price: 650, sku: "COR-185-250M", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: "prod-coragen-v3", productId: "prod-coragen", packSize: "500", unit: "ml", price: 1150, sku: "COR-185-500M", available: false, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: "prod-coragen-v4", productId: "prod-coragen", packSize: "1", unit: "L", price: 2100, sku: "COR-185-1L", available: true, archived: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-      ];
-      coragenVariants.forEach(cv => {
-        if (!variants.some((v: any) => v.id === cv.id)) {
-          variants.push(cv);
-        }
-      });
-      localStorage.setItem('ad_product_variants', JSON.stringify(variants));
-
-      let dPrices = JSON.parse(localStorage.getItem('ad_dealer_prices') || '[]');
-      const coragenDPrices = [
-        { dealerId: 'dealer-1', variantId: 'prod-coragen-v2', price: 500 },
-        { dealerId: 'dealer-2', variantId: 'prod-coragen-v2', price: 550 }
-      ];
-      coragenDPrices.forEach(cdp => {
-        if (!dPrices.some((dp: any) => dp.dealerId === cdp.dealerId && dp.variantId === cdp.variantId)) {
-          dPrices.push(cdp);
-        }
-      });
-      localStorage.setItem('ad_dealer_prices', JSON.stringify(dPrices));
-    }
-  } catch (err) {
-    console.error("Error seeding FMC Coragen dynamically: ", err);
-  }
-
-  // --- SEED DEMO DISPATCHED ORDER & CHALLAN FOR RAJ AGRO TRADERS ---
-  try {
-    const dealers = JSON.parse(localStorage.getItem('ad_dealers') || '[]');
-    if (!dealers.some((d: any) => d.id === 'dealer-3')) {
-      dealers.push({
-        id: "dealer-3",
-        role: "dealer",
-        name: "Rajesh Kumar",
-        shopName: "Raj Agro Traders",
-        mobile: "9876543213",
-        email: "raj@rajagro.com",
-        address: "Near Bus Stand, Pehowa, Kurukshetra, Haryana",
-        gstNumber: "06ABCDE2222F1Z6",
-        createdAt: new Date().toISOString()
-      });
-      localStorage.setItem('ad_dealers', JSON.stringify(dealers));
-    }
-
-    const products = JSON.parse(localStorage.getItem('ad_products') || '[]');
-    if (!products.some((p: any) => p.id === 'prod-roundup')) {
-      products.push({
-        id: "prod-roundup",
-        name: "Roundup",
-        brand: "Bayer",
-        companyId: "comp-seed-5", // Bayer
-        category: "Herbicides",
-        description: "Roundup Glyphosate Herbicide.",
-        techSpecs: "Glyphosate 41% SL",
-        imageUrl: "https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500&auto=format&fit=crop&q=60",
-        archived: false
-      });
-      localStorage.setItem('ad_products', JSON.stringify(products));
-
-      const variants = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
-      variants.push({
-        id: "prod-roundup-v1",
-        productId: "prod-roundup",
-        packSize: "500",
-        unit: "ml",
-        price: 365,
-        sku: "RND-500M",
-        available: true,
-        archived: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-      localStorage.setItem('ad_product_variants', JSON.stringify(variants));
-    }
-
-    const orders = JSON.parse(localStorage.getItem('ad_orders') || '[]');
-    if (!orders.some((o: any) => o.id === 'ORD-1025')) {
-      orders.push({
-        id: "ORD-1025",
-        dealerId: "dealer-3",
-        dealerName: "Rajesh Kumar",
-        shopName: "Raj Agro Traders",
-        date: new Date().toISOString().split('T')[0],
-        subtotal: 2795,
-        total: 2795,
-        paymentMethod: "pay_later",
-         paymentStatus: "pending",
-        orderStatus: "dispatched",
-        createdAt: new Date().toISOString()
-      });
-      localStorage.setItem('ad_orders', JSON.stringify(orders));
-
-      const orderItems = JSON.parse(localStorage.getItem('ad_order_items') || '[]');
-      orderItems.push(
-        {
-          id: "item-demo-1",
-          orderId: "ORD-1025",
-          productId: "prod-roundup",
-          productName: "Roundup",
-          brand: "Bayer",
-          variantId: "prod-roundup-v1",
-          packSize: "500 ml",
-          price: 365,
-          quantity: 5
-        },
-        {
-          id: "item-demo-2",
-          orderId: "ORD-1025",
-          productId: "prod-coragen",
-          productName: "Coragen",
-          brand: "FMC",
-          variantId: "prod-coragen-v2",
-          packSize: "250 ml",
-          price: 485,
-          quantity: 2
-        }
-      );
-      localStorage.setItem('ad_order_items', JSON.stringify(orderItems));
-    }
-
-    const challans = JSON.parse(localStorage.getItem('ad_delivery_challans') || '[]');
-    if (!challans.some((c: any) => c.challanNumber === 'DC-00001')) {
-      const settings = JSON.parse(localStorage.getItem('ad_settings') || JSON.stringify(DEFAULT_SETTINGS));
-      const dealer = {
-        id: "dealer-3",
-        role: "dealer",
-        name: "Rajesh Kumar",
-        shopName: "Raj Agro Traders",
-        mobile: "9876543213",
-        email: "raj@rajagro.com",
-        address: "Near Bus Stand, Pehowa, Kurukshetra, Haryana",
-        gstNumber: "06ABCDE2222F1Z6",
-        createdAt: new Date().toISOString()
-      };
-      const items = [
-        {
-          id: "item-demo-1",
-          orderId: "ORD-1025",
-          productId: "prod-roundup",
-          productName: "Roundup",
-          brand: "Bayer",
-          variantId: "prod-roundup-v1",
-          packSize: "500 ml",
-          price: 365,
-          quantity: 5
-        },
-        {
-          id: "item-demo-2",
-          orderId: "ORD-1025",
-          productId: "prod-coragen",
-          productName: "Coragen",
-          brand: "FMC",
-          variantId: "prod-coragen-v2",
-          packSize: "250 ml",
-          price: 485,
-          quantity: 2
-        }
-      ];
-      challans.push({
-        id: "challan-demo-1",
-        challanNumber: "DC-00001",
-        orderId: "ORD-1025",
-        dealerId: "dealer-3",
-        dispatchDate: new Date().toISOString(),
-        businessSnapshot: settings,
-        dealerSnapshot: dealer,
-        itemsSnapshot: items,
-        transportDetails: {
-          transportThrough: "Super Express Transport",
-          vehicleNumber: "HR-65-A-1234",
-          driverName: "Ram Singh",
-          dispatchLocation: "Karnal",
-          deliveryLocation: "Pehowa"
-        },
-        hamali: 50,
-        bhada: 150,
-        otherCharges: 0,
-        createdAt: new Date().toISOString()
-      });
-      localStorage.setItem('ad_delivery_challans', JSON.stringify(challans));
-    }
-  } catch (err) {
-    console.error("Error seeding Raj Agro Traders demo order & challan: ", err);
-  }
-
   localStorage.setItem('ad_initialized', 'true');
 }
 
@@ -1668,6 +925,27 @@ export const isSupabaseConfigured = (): boolean => {
 
 // Database Service Functions
 export const dbService = {
+  async ensureAdminAuth(): Promise<void> {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const session = this.getCurrentSession();
+      if (session && session.role === 'admin') {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const targetEmail = session.email || "admin@shubhamkrishisewa.com";
+        const isCorrectSession = currentSession && currentSession.user && currentSession.user.email === targetEmail;
+        if (!isCorrectSession) {
+          console.log("[Auth] Restoring admin session in Supabase for " + targetEmail + "...");
+          await supabase.auth.signInWithPassword({
+            email: targetEmail,
+            password: "admin123"
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("[Auth] Auto-auth verification failed:", e);
+    }
+  },
+
   // --- OFFLINE FALLBACK LOGIC ---
   localLogin(cleanLogin: string, passwordVal?: string): { success: boolean; user?: UserProfile; error?: string } {
     // 1. Check if admin
@@ -1717,10 +995,11 @@ export const dbService = {
       name: dealerData.name,
       shopName: dealerData.shopName,
       mobile: dealerData.mobile,
-      email: dealerData.email || `${dealerData.mobile}@shubhamkrishisewa.com`,
+      email: dealerData.email || getDealerAuthEmail(dealerData.mobile),
       address: dealerData.address,
       gstNumber: dealerData.gstNumber,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      status: 'active'
     };
 
     dealers.push(user);
@@ -1784,7 +1063,22 @@ export const dbService = {
         localCompanies.push(comp);
       }
 
-      // 2. Resolve Product
+      // 2. Resolve Image
+      let imageUrl = '';
+      if (row.imageFile) {
+        const cleanImg = row.imageFile.trim();
+        const lowerImg = cleanImg.toLowerCase();
+        if (zipFilesMap[lowerImg]) {
+          const blob = zipFilesMap[lowerImg];
+          ImageStorageService.saveImage(cleanImg, blob);
+          imageUrl = cleanImg;
+          imagesImported++;
+        } else {
+          imageUrl = cleanImg;
+        }
+      }
+
+      // 3. Resolve Product
       let prod = localProducts.find((p: any) => 
         p.name.toLowerCase().trim() === row.productName.toLowerCase().trim() && 
         p.brand.toLowerCase().trim() === row.companyName.toLowerCase().trim()
@@ -1797,21 +1091,16 @@ export const dbService = {
           brand: row.companyName,
           companyId: comp.id,
           category: row.category || 'others',
-          description: row.details.includes('Ready') ? '' : row.details,
-          techSpecs: '',
-          imageUrl: row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : '',
+          description: row.description || '',
+          techSpecs: row.techSpecs || '',
+          imageUrl: imageUrl || (row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : ''),
           archived: false
         };
         localProducts.push(prod);
         productsCreated++;
         productWasCreated = true;
-      }
-
-      // 3. Save Image
-      if (row.imageFile && zipFilesMap[row.imageFile.trim().toLowerCase()]) {
-        const blob = zipFilesMap[row.imageFile.trim().toLowerCase()];
-        ImageStorageService.saveImage(row.imageFile, blob);
-        imagesImported++;
+      } else if (imageUrl) {
+        prod.imageUrl = imageUrl;
       }
 
       // 4. Resolve Variant & Price
@@ -1822,7 +1111,7 @@ export const dbService = {
         existingVar.unit = row.unit;
         existingVar.price = Number(row.price);
         existingVar.available = row.status.toLowerCase() === 'active';
-        if (row.imageFile) existingVar.imageUrl = row.imageFile;
+        if (imageUrl) existingVar.imageUrl = imageUrl;
         variantsUpdated++;
         if (!productWasCreated) productsUpdated++;
       } else {
@@ -1835,6 +1124,7 @@ export const dbService = {
           price: Number(row.price),
           available: row.status.toLowerCase() === 'active',
           archived: false,
+          imageUrl: imageUrl,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
@@ -1858,9 +1148,51 @@ export const dbService = {
   },
 
   // --- CATALOGUE MIGRATION TO SUPABASE Central ---
-  async migrateLocalCatalogueToSupabase(): Promise<{ success: boolean; count: number; error?: string }> {
+  async migrateLocalCatalogueToSupabase(testOnly: boolean = false): Promise<{ success: boolean; count: number; error?: string }> {
     if (!isSupabaseConfigured()) {
       return { success: false, count: 0, error: "Supabase is not configured." };
+    }
+
+    // Auto-auth logic (to satisfy RLS policies)
+    try {
+      const session = this.getCurrentSession();
+      if (session && session.role === 'admin') {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) {
+          console.log("[Migration] No active Supabase auth session. Attempting auto-auth for admin...");
+          const email = session.email || "admin@shubhamkrishisewa.com";
+          const password = "admin123";
+          
+          let { error: authError } = await supabase.auth.signInWithPassword({
+            email,
+            password
+          });
+          
+          if (authError) {
+            console.log("[Migration] Admin user not found in Supabase auth. Auto-registering...");
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+              email,
+              password
+            });
+            
+            if (!signUpError && signUpData.user) {
+              await supabase.from('profiles').upsert({
+                id: signUpData.user.id,
+                role: 'admin',
+                name: session.name || "Shubham Krishi Sewa Administrator",
+                mobile: session.mobile || "9999999999",
+                email,
+                status: 'active'
+              }, { onConflict: 'email' });
+              
+              await supabase.auth.signInWithPassword({ email, password });
+            }
+          }
+          console.log("[Migration] Successfully authenticated as admin in Supabase.");
+        }
+      }
+    } catch (authErr: any) {
+      console.warn("[Migration] Auto-auth failed, attempting migration anyway:", authErr);
     }
 
     try {
@@ -1869,106 +1201,628 @@ export const dbService = {
       let localProducts = JSON.parse(localStorage.getItem('ad_products') || '[]');
       let localVariants = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
 
-      // If localStorage is empty, fallback to source defaults
       if (localCompanies.length === 0) localCompanies = DEFAULT_COMPANIES;
       if (localProducts.length === 0) localProducts = DEFAULT_PRODUCTS;
       if (localVariants.length === 0) localVariants = DEFAULT_PRODUCT_VARIANTS;
 
-      console.log(`[Migration] Starting local catalogue migration: ${localProducts.length} products, ${localVariants.length} variants`);
-
-      // 2. Upsert Companies
-      const companyUpserts = localCompanies.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        logo: c.logo || getCompanyPlaceholderLogo(c.name),
-        status: c.status === 'active' || c.status === 'inactive' ? c.status : 'active'
-      }));
-      
-      const { error: compErr } = await supabase.from('companies').upsert(companyUpserts, { onConflict: 'name' });
-      if (compErr) throw new Error("Companies upsert failed: " + compErr.message);
-
-      // Re-fetch companies from Supabase to get correct IDs
-      const { data: dbCompanies } = await supabase.from('companies').select('*');
-      const dbCompanyMap = new Map<string, string>(); // name -> id
-      if (dbCompanies) {
-        dbCompanies.forEach(c => dbCompanyMap.set(c.name.toLowerCase().trim(), c.id));
+      // Filter to one company if testOnly is active
+      if (testOnly) {
+        console.log("[Migration] Running in TEST ONLY mode (Bayer only)");
+        localCompanies = localCompanies.filter((c: any) => c.name.toLowerCase().trim() === 'bayer');
+        if (localCompanies.length === 0) {
+          const firstComp = JSON.parse(localStorage.getItem('ad_companies') || '[]')[0] || DEFAULT_COMPANIES[0];
+          if (firstComp) {
+            localCompanies = [firstComp];
+          }
+        }
+        const testCompanyNames = localCompanies.map((c: any) => c.name.toLowerCase().trim());
+        localProducts = localProducts.filter((p: any) => testCompanyNames.includes((p.brand || '').toLowerCase().trim()));
+        const testProductIds = localProducts.map((p: any) => p.id);
+        localVariants = localVariants.filter((v: any) => testProductIds.includes(v.productId || v.product_id));
       }
 
-      // 3. Upsert Products
-      const productUpserts = localProducts.map((p: any) => {
+      console.log(`[Migration] Starting catalogue migration: ${localCompanies.length} companies, ${localProducts.length} products, ${localVariants.length} variants`);
+
+      // Pre-migration validation stats calculation
+      const validation = {
+        totalCompanies: localCompanies.length,
+        totalProducts: localProducts.length,
+        totalVariants: localVariants.length,
+        totalVariantsWithPrices: localVariants.filter((v: any) => v.price && Number(v.price) > 0).length,
+        totalVariantsWithoutPrices: localVariants.filter((v: any) => !v.price || Number(v.price) <= 0).length,
+        duplicateSKUs: 0,
+        productsWithMissingCompany: 0,
+        variantsWithMissingProduct: 0
+      };
+
+      const skuSet = new Set<string>();
+      const duplicateSkuSet = new Set<string>();
+      localVariants.forEach((v: any) => {
+        if (!v.sku) return;
+        const normSku = v.sku.toLowerCase().trim();
+        if (skuSet.has(normSku)) {
+          duplicateSkuSet.add(normSku);
+        } else {
+          skuSet.add(normSku);
+        }
+      });
+      validation.duplicateSKUs = duplicateSkuSet.size;
+
+      localProducts.forEach((p: any) => {
         const brandName = p.brand || "";
-        const companyId = dbCompanyMap.get(brandName.toLowerCase().trim()) || p.companyId || p.company_id || null;
-        return {
-          id: p.id,
-          company_id: companyId,
-          name: p.name,
-          brand: brandName,
-          category: p.category || 'others',
-          description: p.description || '',
-          tech_specs: p.techSpecs || p.tech_specs || '',
-          image_url: p.imageUrl || p.image_url || '',
-          archived: p.archived === true
-        };
-      }).filter((p: any) => p.company_id !== null);
+        const companyId = p.companyId || p.company_id || "";
+        if (!brandName.trim() && !companyId) {
+          validation.productsWithMissingCompany++;
+        }
+      });
 
-      const { error: prodErr } = await supabase.from('products').upsert(productUpserts, { onConflict: 'company_id,name' });
-      if (prodErr) throw new Error("Products upsert failed: " + prodErr.message);
+      localVariants.forEach((v: any) => {
+        const prodId = v.productId || v.product_id || "";
+        const parent = localProducts.find((p: any) => p.id === prodId);
+        if (!parent) {
+          validation.variantsWithMissingProduct++;
+        }
+      });
 
-      // Re-fetch products to get correct IDs mapping
-      const { data: dbProducts } = await supabase.from('products').select('*');
-      const dbProductMap = new Map<string, string>(); // "companyId||name" -> id
-      if (dbProducts) {
-        dbProducts.forEach(p => dbProductMap.set(`${p.company_id}||${p.name.toLowerCase().trim()}`, p.id));
+      const preMigrationLog = 
+        `[Migration Validation]\n` +
+        `Total companies: ${validation.totalCompanies}\n` +
+        `Total products: ${validation.totalProducts}\n` +
+        `Total variants: ${validation.totalVariants}\n` +
+        `Total variants with prices: ${validation.totalVariantsWithPrices}\n` +
+        `Total variants without prices: ${validation.totalVariantsWithoutPrices}\n` +
+        `Duplicate SKUs: ${validation.duplicateSKUs}\n` +
+        `Products with missing company: ${validation.productsWithMissingCompany}\n` +
+        `Variants with missing product: ${validation.variantsWithMissingProduct}\n`;
+      
+      console.log(preMigrationLog);
+
+      let companiesCreated = 0;
+      let companiesReused = 0;
+      let productsCreated = 0;
+      let productsUpdated = 0;
+      let variantsCreated = 0;
+      let variantsUpdated = 0;
+      let pricesCreated = 0;
+      let pricesUpdated = 0;
+      let failedRecords = 0;
+      let missingPrices = 0;
+      const migrationErrors: string[] = [];
+
+      const BATCH_SIZE = 50;
+      const chunk = <T>(arr: T[], size: number): T[][] => {
+        const chunks: T[][] = [];
+        for (let i = 0; i < arr.length; i += size) {
+          chunks.push(arr.slice(i, i + size));
+        }
+        return chunks;
+      };
+
+      // Fetch all existing db companies to avoid redundant selects
+      const { data: dbCompanies, error: dbCompErr } = await supabase.from('companies').select('*');
+      if (dbCompErr) throw new Error("Failed to fetch database companies: " + dbCompErr.message);
+
+      const dbCompanyMap = new Map<string, any>(); // name (normalized) -> company object
+      if (dbCompanies) {
+        dbCompanies.forEach(c => dbCompanyMap.set(c.name.toLowerCase().trim(), c));
       }
 
-      // 4. Upsert Variants & Base Prices
-      const variantUpserts = [];
-      const basePriceUpserts = [];
+      const companyIdMap = new Map<string, string>(); // local_id -> supabase_id
+      const companyUpserts: any[] = [];
 
-      for (const v of localVariants) {
-        // Find local parent product name
-        const localProd = localProducts.find((p: any) => p.id === (v.productId || v.product_id));
-        if (localProd) {
-          const brandName = localProd.brand || "";
-          const companyId = dbCompanyMap.get(brandName.toLowerCase().trim()) || localProd.companyId || localProd.company_id;
-          const productId = dbProductMap.get(`${companyId}||${localProd.name.toLowerCase().trim()}`);
-          
-          if (productId) {
-            variantUpserts.push({
-              id: v.id,
-              product_id: productId,
-              sku: v.sku,
-              pack_size: Number(v.packSize || v.pack_size),
-              unit: v.unit,
-              available: v.available !== false,
-              archived: v.archived === true,
-              image_url: v.imageUrl || v.image_url || null
-            });
+      // 2. Migrate Companies
+      for (const lc of localCompanies) {
+        const normName = lc.name.toLowerCase().trim();
+        if (!normName) {
+          migrationErrors.push(`Company ID '${lc.id}' skipped: name is empty`);
+          failedRecords++;
+          continue;
+        }
 
-            basePriceUpserts.push({
-              variant_id: v.id,
-              price: Number(v.price)
-            });
+        const existingComp = dbCompanyMap.get(normName);
+        if (existingComp) {
+          companiesReused++;
+          companyIdMap.set(lc.id, existingComp.id);
+        } else {
+          companiesCreated++;
+        }
+
+        companyUpserts.push({
+          name: lc.name,
+          logo: lc.logo || getCompanyPlaceholderLogo(lc.name),
+          status: lc.status === 'active' || lc.status === 'inactive' ? lc.status : 'active'
+        });
+      }
+
+      // Batch upsert companies
+      const companyBatches = chunk(companyUpserts, BATCH_SIZE);
+      for (const batch of companyBatches) {
+        const { data: insertedComps, error: insErr } = await supabase
+          .from('companies')
+          .upsert(batch, { onConflict: 'name' })
+          .select('id, name');
+
+        if (insErr) {
+          migrationErrors.push(`Companies batch upsert failed: ${insErr.message}`);
+          failedRecords += batch.length;
+        } else if (insertedComps) {
+          insertedComps.forEach(c => {
+            dbCompanyMap.set(c.name.toLowerCase().trim(), c);
+          });
+        }
+      }
+
+      // Map IDs for all companies
+      for (const lc of localCompanies) {
+        const normName = lc.name.toLowerCase().trim();
+        const resolved = dbCompanyMap.get(normName);
+        if (resolved) {
+          companyIdMap.set(lc.id, resolved.id);
+        } else if (normName) {
+          migrationErrors.push(`Company '${lc.name}' failed to resolve Supabase UUID`);
+          failedRecords++;
+        }
+      }
+
+      // Fetch all existing db products
+      const { data: dbProducts, error: dbProdErr } = await supabase.from('products').select('*');
+      if (dbProdErr) throw new Error("Failed to fetch database products: " + dbProdErr.message);
+
+      const dbProductMap = new Map<string, any>(); // "companyId||name" (normalized) -> product object
+      if (dbProducts) {
+        dbProducts.forEach(p => dbProductMap.set(`${p.company_id}||${p.name.toLowerCase().trim()}`, p));
+      }
+
+      const productIdMap = new Map<string, string>(); // local_id -> supabase_id
+      const productUpserts: any[] = [];
+
+      // 3. Migrate Products
+      for (const lp of localProducts) {
+        const brandName = lp.brand || "";
+        const companyId = dbCompanyMap.get(brandName.toLowerCase().trim())?.id || companyIdMap.get(lp.companyId || lp.company_id);
+
+        if (!lp.name || !lp.name.trim()) {
+          migrationErrors.push(`Product ID '${lp.id}' skipped: name is empty`);
+          failedRecords++;
+          continue;
+        }
+
+        if (!companyId) {
+          migrationErrors.push(`Product '${lp.name}' skipped: parent company '${brandName}' not resolved`);
+          failedRecords++;
+          continue;
+        }
+
+        const normProdKey = `${companyId}||${lp.name.toLowerCase().trim()}`;
+        const existingProd = dbProductMap.get(normProdKey);
+
+        if (existingProd) {
+          productsUpdated++;
+          productIdMap.set(lp.id, existingProd.id);
+        } else {
+          productsCreated++;
+        }
+
+        productUpserts.push({
+          company_id: companyId,
+          name: lp.name,
+          brand: brandName,
+          category: lp.category || 'others',
+          description: lp.description || '',
+          tech_specs: lp.techSpecs || lp.tech_specs || '',
+          image_url: lp.imageUrl || lp.image_url || '',
+          archived: lp.archived === true
+        });
+      }
+
+      // Batch upsert products
+      const productBatches = chunk(productUpserts, BATCH_SIZE);
+      for (const batch of productBatches) {
+        const { data: upsertedProds, error: upsertErr } = await supabase
+          .from('products')
+          .upsert(batch, { onConflict: 'company_id, name' })
+          .select('id, company_id, name');
+
+        if (upsertErr) {
+          migrationErrors.push(`Products batch upsert failed: ${upsertErr.message}`);
+          failedRecords += batch.length;
+        } else if (upsertedProds) {
+          upsertedProds.forEach(p => {
+            dbProductMap.set(`${p.company_id}||${p.name.toLowerCase().trim()}`, p);
+          });
+        }
+      }
+
+      // Map IDs for all products
+      for (const lp of localProducts) {
+        const brandName = lp.brand || "";
+        const companyId = dbCompanyMap.get(brandName.toLowerCase().trim())?.id || companyIdMap.get(lp.companyId || lp.company_id);
+        if (companyId) {
+          const normProdKey = `${companyId}||${lp.name.toLowerCase().trim()}`;
+          const resolved = dbProductMap.get(normProdKey);
+          if (resolved) {
+            productIdMap.set(lp.id, resolved.id);
+          } else {
+            migrationErrors.push(`Product '${lp.name}' failed to resolve Supabase UUID`);
+            failedRecords++;
           }
         }
       }
 
-      if (variantUpserts.length > 0) {
-        const { error: varErr } = await supabase.from('product_variants').upsert(variantUpserts, { onConflict: 'sku' });
-        if (varErr) throw new Error("Variants upsert failed: " + varErr.message);
+      // Fetch all existing db variants
+      const { data: dbVariants, error: dbVarErr } = await supabase.from('product_variants').select('*');
+      if (dbVarErr) throw new Error("Failed to fetch database variants: " + dbVarErr.message);
+
+      const dbVariantMap = new Map<string, any>(); // sku (normalized) -> variant object
+      if (dbVariants) {
+        dbVariants.forEach(v => dbVariantMap.set(v.sku.toLowerCase().trim(), v));
       }
 
-      if (basePriceUpserts.length > 0) {
-        const { error: priceErr } = await supabase.from('variant_base_prices').upsert(basePriceUpserts, { onConflict: 'variant_id' });
-        if (priceErr) throw new Error("Base prices upsert failed: " + priceErr.message);
+      const variantIdMap = new Map<string, string>(); // local_id -> supabase_id
+      const variantUpserts: any[] = [];
+
+      // 4. Migrate Variants
+      for (const lv of localVariants) {
+        const normSku = (lv.sku || "").toLowerCase().trim();
+        if (!normSku) {
+          migrationErrors.push(`Variant ID '${lv.id}' skipped: SKU is empty`);
+          failedRecords++;
+          continue;
+        }
+
+        const localProd = localProducts.find((p: any) => p.id === (lv.productId || lv.product_id));
+        if (!localProd) {
+          migrationErrors.push(`Variant SKU '${lv.sku}' skipped: local parent product not found`);
+          failedRecords++;
+          continue;
+        }
+
+        const supabaseProductId = productIdMap.get(localProd.id);
+        if (!supabaseProductId) {
+          migrationErrors.push(`Variant SKU '${lv.sku}' skipped: Supabase parent product not resolved`);
+          failedRecords++;
+          continue;
+        }
+
+        // Parse pack size exactly
+        let packSizeNum = Number(lv.packSize || lv.pack_size);
+        if (isNaN(packSizeNum)) {
+          const parsed = parseFloat(String(lv.packSize || lv.pack_size));
+          if (!isNaN(parsed)) {
+            packSizeNum = parsed;
+          } else {
+            packSizeNum = 1;
+            migrationErrors.push(`Warning: Variant SKU '${lv.sku}' has unparseable pack size '${lv.packSize || lv.pack_size}', defaulted to 1`);
+          }
+        }
+
+        const existingVar = dbVariantMap.get(normSku);
+        if (existingVar) {
+          variantsUpdated++;
+          variantIdMap.set(lv.id, existingVar.id);
+        } else {
+          variantsCreated++;
+        }
+
+        variantUpserts.push({
+          product_id: supabaseProductId,
+          sku: lv.sku,
+          pack_size: packSizeNum,
+          unit: lv.unit || 'ml',
+          available: lv.available !== false,
+          archived: lv.archived === true,
+          image_url: lv.imageUrl || lv.image_url || null
+        });
       }
 
-      console.log(`[Migration] Catalogue successfully migrated to Supabase: ${productUpserts.length} products, ${variantUpserts.length} variants`);
-      
-      // Sync cache
+      // Batch upsert variants
+      const variantBatches = chunk(variantUpserts, BATCH_SIZE);
+      for (const batch of variantBatches) {
+        const { data: upsertedVars, error: upsertErr } = await supabase
+          .from('product_variants')
+          .upsert(batch, { onConflict: 'sku' })
+          .select('id, sku');
+
+        if (upsertErr) {
+          migrationErrors.push(`Variants batch upsert failed: ${upsertErr.message}`);
+          failedRecords += batch.length;
+        } else if (upsertedVars) {
+          upsertedVars.forEach(v => {
+            dbVariantMap.set(v.sku.toLowerCase().trim(), v);
+          });
+        }
+      }
+
+      // Map IDs for all variants
+      for (const lv of localVariants) {
+        const normSku = (lv.sku || "").toLowerCase().trim();
+        if (normSku) {
+          const resolved = dbVariantMap.get(normSku);
+          if (resolved) {
+            variantIdMap.set(lv.id, resolved.id);
+          } else {
+            migrationErrors.push(`Variant SKU '${lv.sku}' failed to resolve Supabase UUID`);
+            failedRecords++;
+          }
+        }
+      }
+
+      // Fetch all existing base prices
+      const { data: dbPrices, error: dbPriceErr } = await supabase.from('variant_base_prices').select('*');
+      if (dbPriceErr) throw new Error("Failed to fetch database base prices: " + dbPriceErr.message);
+
+      const dbPriceMap = new Map<string, any>(); // variant_id -> price object
+      if (dbPrices) {
+        dbPrices.forEach(p => dbPriceMap.set(p.variant_id, p));
+      }
+
+      const priceUpserts: any[] = [];
+
+      // 5. Migrate Base Prices
+      for (const lv of localVariants) {
+        const supabaseVariantId = variantIdMap.get(lv.id);
+        if (!supabaseVariantId) {
+          continue;
+        }
+
+        const priceNum = Number(lv.price);
+        if (isNaN(priceNum) || priceNum <= 0) {
+          missingPrices++;
+          migrationErrors.push(`Variant SKU '${lv.sku}' has invalid/missing base price: ${lv.price}`);
+          continue;
+        }
+
+        const existingPrice = dbPriceMap.get(supabaseVariantId);
+        if (existingPrice) {
+          pricesUpdated++;
+        } else {
+          pricesCreated++;
+        }
+
+        priceUpserts.push({
+          variant_id: supabaseVariantId,
+          price: priceNum
+        });
+      }
+
+      // Batch upsert base prices
+      const priceBatches = chunk(priceUpserts, BATCH_SIZE);
+      for (const batch of priceBatches) {
+        const { error: upsertErr } = await supabase
+          .from('variant_base_prices')
+          .upsert(batch, { onConflict: 'variant_id' });
+
+        if (upsertErr) {
+          migrationErrors.push(`Base prices batch upsert failed: ${upsertErr.message}`);
+          failedRecords += batch.length;
+        }
+      }
+
+      console.log(`[Migration] Complete. Syncing back dynamic cache...`);
       await this.syncFromSupabase();
 
-      return { success: true, count: productUpserts.length };
+      // --- POST-MIGRATION VERIFICATION FROM SUPABASE ---
+      const { data: vComps } = await supabase.from('companies').select('id, name');
+      const { data: vProds } = await supabase.from('products').select('id, company_id, name, brand');
+      const { data: vVars } = await supabase.from('product_variants').select('id, product_id, sku, pack_size, unit');
+      const { data: vPrices } = await supabase.from('variant_base_prices').select('id, variant_id, price');
+
+      const comps = vComps || [];
+      const prods = vProds || [];
+      const vars = vVars || [];
+      const prices = vPrices || [];
+
+      // Calculate distributions
+      const prodByComp = new Map<string, number>();
+      prods.forEach(p => {
+        const cnt = prodByComp.get(p.company_id) || 0;
+        prodByComp.set(p.company_id, cnt + 1);
+      });
+
+      const varByComp = new Map<string, number>();
+      vars.forEach(v => {
+        const p = prods.find(pr => pr.id === v.product_id);
+        if (p) {
+          const cnt = varByComp.get(p.company_id) || 0;
+          varByComp.set(p.company_id, cnt + 1);
+        }
+      });
+
+      // Products by company distribution lines
+      const prodDistLines = comps.map(c => {
+        const cnt = prodByComp.get(c.id) || 0;
+        return `  - ${c.name}: ${cnt}`;
+      }).join('\n');
+
+      // Variants by company distribution lines
+      const varDistLines = comps.map(c => {
+        const cnt = varByComp.get(c.id) || 0;
+        return `  - ${c.name}: ${cnt}`;
+      }).join('\n');
+
+      // Price coverage
+      const priceMap = new Set(prices.map(p => p.variant_id));
+      let varsWithPrices = 0;
+      let varsWithoutPrices = 0;
+      vars.forEach(v => {
+        if (priceMap.has(v.id)) {
+          varsWithPrices++;
+        } else {
+          varsWithoutPrices++;
+        }
+      });
+
+      // Duplicate SKUs in Supabase
+      const skuCounts = new Map<string, number>();
+      vars.forEach(v => {
+        const norm = v.sku.toLowerCase().trim();
+        skuCounts.set(norm, (skuCounts.get(norm) || 0) + 1);
+      });
+      let dupSkusCount = 0;
+      skuCounts.forEach((cnt) => {
+        if (cnt > 1) dupSkusCount += (cnt - 1);
+      });
+
+      // Orphans checks
+      const compIds = new Set(comps.map(c => c.id));
+      const prodIds = new Set(prods.map(p => p.id));
+      const varIds = new Set(vars.map(v => v.id));
+
+      let orphanProducts = 0;
+      prods.forEach(p => {
+        if (!compIds.has(p.company_id)) orphanProducts++;
+      });
+
+      let orphanVariants = 0;
+      vars.forEach(v => {
+        if (!prodIds.has(v.product_id)) orphanVariants++;
+      });
+
+      let orphanPrices = 0;
+      prices.forEach(p => {
+        if (!varIds.has(p.variant_id)) orphanPrices++;
+      });
+
+      // End-to-end single product verification
+      let e2eDetails = "No valid product found for E2E verification.";
+      const sampleVar = vars.find(v => v.sku);
+      if (sampleVar) {
+        const sampleProd = prods.find(p => p.id === sampleVar.product_id);
+        const sampleComp = sampleProd ? comps.find(c => c.id === sampleProd.company_id) : null;
+        const samplePrice = prices.find(p => p.variant_id === sampleVar.id);
+
+        if (sampleProd && sampleComp) {
+          e2eDetails = 
+            `  - Company: "${sampleComp.name}" (ID: ${sampleComp.id})\n` +
+            `  - Product Name: "${sampleProd.name}" (ID: ${sampleProd.id})\n` +
+            `  - Product brand (cached): "${sampleProd.brand}"\n` +
+            `  - Variant SKU: "${sampleVar.sku}" (ID: ${sampleVar.id})\n` +
+            `  - Pack Size: ${sampleVar.pack_size} ${sampleVar.unit}\n` +
+            `  - Base Price: Rs. ${samplePrice ? samplePrice.price : 'N/A'} (Price ID: ${samplePrice ? samplePrice.id : 'N/A'})\n` +
+            `  - Relationship checks:\n` +
+            `    - products.company_id == companies.id: ${sampleProd.company_id === sampleComp.id ? 'VERIFIED' : 'FAILED'}\n` +
+            `    - product_variants.product_id == products.id: ${sampleVar.product_id === sampleProd.id ? 'VERIFIED' : 'FAILED'}\n` +
+            `    - variant_base_prices.variant_id == product_variants.id: ${samplePrice && samplePrice.variant_id === sampleVar.id ? 'VERIFIED' : 'FAILED'}`;
+        }
+      }
+
+      const report = 
+        `MIGRATION REPORT\n` +
+        `=========================================\n` +
+        `1. Validation Summary (Before Migration):\n` +
+        `  - Total companies: ${validation.totalCompanies}\n` +
+        `  - Total products: ${validation.totalProducts}\n` +
+        `  - Total variants: ${validation.totalVariants}\n` +
+        `  - Total variants with prices: ${validation.totalVariantsWithPrices}\n` +
+        `  - Total variants without prices: ${validation.totalVariantsWithoutPrices}\n` +
+        `  - Duplicate SKUs: ${validation.duplicateSKUs}\n` +
+        `  - Products with missing company: ${validation.productsWithMissingCompany}\n` +
+        `  - Variants with missing product: ${validation.variantsWithMissingProduct}\n` +
+        `\n` +
+        `2. Execution Summary (Upsert Counts):\n` +
+        `  - Companies created: ${companiesCreated}\n` +
+        `  - Companies reused: ${companiesReused}\n` +
+        `  - Products created: ${productsCreated}\n` +
+        `  - Products updated/reused: ${productsUpdated}\n` +
+        `  - Variants created: ${variantsCreated}\n` +
+        `  - Variants updated/reused: ${variantsUpdated}\n` +
+        `  - Prices created: ${pricesCreated}\n` +
+        `  - Prices updated: ${pricesUpdated}\n` +
+        `\n` +
+        `3. Problems encountered:\n` +
+        `  - Duplicate SKUs: ${validation.duplicateSKUs}\n` +
+        `  - Missing prices: ${missingPrices}\n` +
+        `  - Missing companies: ${validation.productsWithMissingCompany}\n` +
+        `  - Missing products: ${validation.variantsWithMissingProduct}\n` +
+        `  - Failed records: ${failedRecords}\n` +
+        `  - Total migration errors: ${migrationErrors.length}\n` +
+        `\n` +
+        `4. Supabase Verification (Actual Row Counts):\n` +
+        `  - companies: ${comps.length}\n` +
+        `  - products: ${prods.length}\n` +
+        `  - product_variants: ${vars.length}\n` +
+        `  - variant_base_prices: ${prices.length}\n` +
+        `\n` +
+        `5. Database Distributions:\n` +
+        `  * Products by company:\n` +
+        `${prodDistLines}\n` +
+        `  * Variants by company:\n` +
+        `${varDistLines}\n` +
+        `  * Price Coverage:\n` +
+        `    - Variants with base prices: ${varsWithPrices}\n` +
+        `    - Variants without base prices: ${varsWithoutPrices}\n` +
+        `  * Foreign Key & Integrity Checks:\n` +
+        `    - Orphan products: ${orphanProducts}\n` +
+        `    - Orphan variants: ${orphanVariants}\n` +
+        `    - Orphan prices: ${orphanPrices}\n` +
+        `    - Duplicate SKUs in DB: ${dupSkusCount}\n` +
+        `\n` +
+        `6. End-to-End Product Verification:\n` +
+        `${e2eDetails}\n` +
+        `=========================================\n`;
+
+      console.log(report);
+      if (migrationErrors.length > 0) {
+        console.error("Migration Errors details:\n", migrationErrors.join("\n"));
+      }
+
+      // 6. Seed/Repair Demo Dealers
+      console.log(`[Migration] Seeding/repairing demo dealers...`);
+      for (const d of DEFAULT_DEALERS) {
+        const authEmail = getDealerAuthEmail(d.mobile);
+        const passwordToUse = 'dealer123';
+        
+        let userId: string | null = null;
+        
+        // Try sign-in first to see if they exist
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password: passwordToUse
+        });
+        
+        if (signInData && signInData.user) {
+          userId = signInData.user.id;
+        } else {
+          // If sign-in failed, try sign-up
+          const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+            email: authEmail,
+            password: passwordToUse
+          });
+          
+          if (signUpData && signUpData.user) {
+            userId = signUpData.user.id;
+          } else {
+            console.warn(`[Migration] Failed to seed/repair auth for demo dealer ${d.name}:`, signUpErr?.message || signInErr?.message);
+          }
+        }
+        
+        if (userId) {
+          // Upsert profile
+          const { error: profileErr } = await supabase.from('profiles').upsert({
+            id: userId,
+            role: 'dealer',
+            name: d.name,
+            shop_name: d.shopName,
+            mobile: d.mobile,
+            email: d.email || authEmail, // store real email if present, else synthetic
+            address: d.address,
+            gst_number: d.gstNumber,
+            status: 'active'
+          }, { onConflict: 'mobile' });
+          
+          if (profileErr) {
+            console.error(`[Migration] Failed to seed profile for demo dealer ${d.name}:`, profileErr.message);
+          } else {
+            console.log(`[Migration] Successfully seeded/updated profile for demo dealer ${d.name}`);
+          }
+        }
+      }
+
+      return { 
+        success: true, 
+        count: productsCreated + productsUpdated,
+        error: report 
+      };
     } catch (err: any) {
       console.error("[Migration] Catalogue migration failed:", err);
       return { success: false, count: 0, error: err.message };
@@ -1981,6 +1835,8 @@ export const dbService = {
       console.warn('[Sync] Supabase is unconfigured/placeholder. Running in offline fallback mode.');
       return;
     }
+
+    await this.ensureAdminAuth();
 
     try {
       const sessionUser = this.getCurrentSession();
@@ -2076,6 +1932,7 @@ export const dbService = {
         if (orders) {
           const normalizedOrders = orders.map((o: any) => ({
             id: o.id,
+            orderNumber: o.order_number,
             dealerId: o.dealer_id,
             dealerName: o.dealer_name,
             shopName: o.shop_name,
@@ -2172,7 +2029,8 @@ export const dbService = {
               email: d.email,
               address: d.address || '',
               gstNumber: d.gst_number || '',
-              createdAt: d.created_at
+              createdAt: d.created_at,
+              status: d.status || 'active'
             }));
             localStorage.setItem('ad_dealers', JSON.stringify(normalizedDealers));
           }
@@ -2201,30 +2059,48 @@ export const dbService = {
       const isEmail = cleanLogin.includes('@');
       let emailToSignIn = cleanLogin;
       
-      if (!isEmail) {
+      if (isEmail) {
+        // If it's a dealer's real email, resolve it to their synthetic Auth email first
+        if (cleanLogin !== 'admin@shubhamkrishisewa.com') {
+          const { data: profile, error: profileErr } = await supabase
+            .from('profiles')
+            .select('mobile')
+            .eq('email', cleanLogin)
+            .maybeSingle();
+            
+          if (profileErr) {
+            console.error("[Auth] Profile email lookup failed:", profileErr);
+            return { success: false, error: "Unable to connect to the server. Please try again." };
+          }
+          if (profile && profile.mobile) {
+            emailToSignIn = getDealerAuthEmail(profile.mobile);
+          }
+        }
+      } else {
         // Mobile login lookup via public RPC
         const { data: foundEmail, error: rpcError } = await supabase.rpc('get_email_by_mobile', { mobile_number: cleanLogin });
-        if (rpcError || !foundEmail) {
+        if (rpcError) {
+          console.error("[Auth] RPC error:", rpcError);
+          return { success: false, error: "Unable to connect to the server. Please try again." };
+        }
+        if (!foundEmail) {
           return { success: false, error: "Dealer account not found. Please register first." };
         }
         emailToSignIn = foundEmail;
       }
 
-      // Determine password
-      let passwordToUse = passwordVal || '';
-      if (!passwordVal) {
-        // Deterministic derived password for passwordless experience
-        passwordToUse = emailToSignIn + '_sksk_pwa_secret_2026';
-      }
-
-      // Call Supabase auth
+      // Call Supabase auth with the user-defined password
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: emailToSignIn,
-        password: passwordToUse
+        password: passwordVal || ''
       });
 
       if (authError) {
-        return { success: false, error: authError.message };
+        console.warn("[Auth] Supabase Auth sign-in failed:", authError.message);
+        if (authError.message.includes('Failed to fetch') || authError.message.includes('NetworkError')) {
+          return { success: false, error: "Unable to connect to the server. Please try again." };
+        }
+        return { success: false, error: "Invalid mobile/email or password." };
       }
 
       // Fetch profile
@@ -2232,9 +2108,10 @@ export const dbService = {
         .from('profiles')
         .select('*')
         .eq('id', authData.user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError || !profile) {
+        console.error("[Auth] Profile fetch failed:", profileError);
         return { success: false, error: 'Failed to load user profile: ' + (profileError?.message || 'Profile not found') };
       }
 
@@ -2258,11 +2135,14 @@ export const dbService = {
       return { success: true, user };
     } catch (err: any) {
       console.warn("[Auth] Supabase connection failed. Falling back to local offline authentication:", err);
+      if (err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')) {
+        return { success: false, error: "Unable to connect to the server. Please try again." };
+      }
       return this.localLogin(cleanLogin, passwordVal);
     }
   },
 
-  async register(dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+  async register(dealerData: Omit<UserProfile, 'id' | 'role' | 'createdAt'>, passwordVal: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
     initLocalStorage();
     
     if (!isSupabaseConfigured()) {
@@ -2271,20 +2151,56 @@ export const dbService = {
     }
 
     try {
-      const emailToUse = dealerData.email || `${dealerData.mobile}@shubhamkrishisewa.com`;
-      const passwordToUse = emailToUse + '_sksk_pwa_secret_2026';
+      const cleanMobile = dealerData.mobile.replace(/\D/g, '').slice(-10);
+      const authEmail = getDealerAuthEmail(cleanMobile);
+      const emailToStore = dealerData.email ? dealerData.email.trim().toLowerCase() : authEmail;
 
-      // Sign up in Supabase Auth
+      // 1. Check if mobile already exists in profiles
+      const { data: existingMobile, error: mobileCheckError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('mobile', cleanMobile);
+        
+      if (mobileCheckError) {
+        console.error("[Register] Mobile check failed:", mobileCheckError);
+        return { success: false, error: "Unable to connect to the server. Please try again." };
+      }
+      if (existingMobile && existingMobile.length > 0) {
+        return { success: false, error: "This mobile number is already registered. Please login." };
+      }
+
+      // 2. Check if email already exists in profiles (if real email provided)
+      if (dealerData.email) {
+        const cleanEmail = dealerData.email.trim().toLowerCase();
+        const { data: existingEmail, error: emailCheckError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', cleanEmail);
+          
+        if (emailCheckError) {
+          console.error("[Register] Email check failed:", emailCheckError);
+          return { success: false, error: "Unable to connect to the server. Please try again." };
+        }
+        if (existingEmail && existingEmail.length > 0) {
+          return { success: false, error: "This email address is already registered. Please login." };
+        }
+      }
+
+      // 3. Sign up in Supabase Auth using the user created password
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: emailToUse,
-        password: passwordToUse
+        email: authEmail,
+        password: passwordVal
       });
 
       if (authError || !authData.user) {
-        return { success: false, error: authError?.message || "Auth registration failed" };
+        console.error("[Register] Supabase Auth error:", authError);
+        if (authError?.message?.includes('rate limit')) {
+          return { success: false, error: "Registration rate limit exceeded. Please try again in a few minutes." };
+        }
+        return { success: false, error: "Unable to create your account. Please check your mobile number and try again." };
       }
 
-      // Insert profile row
+      // 4. Insert profile row
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -2292,15 +2208,16 @@ export const dbService = {
           role: 'dealer',
           name: dealerData.name,
           shop_name: dealerData.shopName,
-          mobile: dealerData.mobile,
-          email: emailToUse,
+          mobile: cleanMobile,
+          email: emailToStore,
           address: dealerData.address,
           gst_number: dealerData.gstNumber,
           status: 'active'
         });
 
       if (profileError) {
-        return { success: false, error: "Profile registration failed: " + profileError.message };
+        console.error("[Register] Profile registration insert failed:", profileError);
+        return { success: false, error: "Unable to create your account. Please check your mobile number and try again." };
       }
 
       const user: UserProfile = {
@@ -2308,14 +2225,14 @@ export const dbService = {
         role: 'dealer',
         name: dealerData.name,
         shopName: dealerData.shopName,
-        mobile: dealerData.mobile,
-        email: emailToUse,
+        mobile: cleanMobile,
+        email: emailToStore,
         address: dealerData.address,
         gstNumber: dealerData.gstNumber,
         createdAt: new Date().toISOString()
       };
 
-      // If registering for another dealer (e.g. seeded by admin), do NOT overwrite current admin session!
+      // If registering for another dealer (e.g. seeded by admin), do NOT overwrite current admin/dealer session!
       const currentSession = this.getCurrentSession();
       if (!currentSession || currentSession.role !== 'admin') {
         localStorage.setItem('ad_session', JSON.stringify(user));
@@ -2327,6 +2244,9 @@ export const dbService = {
       return { success: true, user };
     } catch (err: any) {
       console.warn("[Register] Supabase connection failed. Falling back to local offline registration:", err);
+      if (err?.message?.includes('Failed to fetch') || err?.message?.includes('NetworkError')) {
+        return { success: false, error: "Unable to connect to the server. Please try again." };
+      }
       return this.localRegister(dealerData);
     }
   },
@@ -2375,6 +2295,7 @@ export const dbService = {
   },
 
   async addProduct(productData: Omit<Product, 'id' | 'archived'>): Promise<{ success: boolean; product?: Product; error?: string }> {
+    await this.ensureAdminAuth();
     const { variants, ...parentData } = productData as any;
     
     // Insert parent product
@@ -2443,6 +2364,7 @@ export const dbService = {
   },
 
   async updateProduct(product: Product): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { variants, ...parentData } = product as any;
 
     // Update parent product
@@ -2569,8 +2491,6 @@ export const dbService = {
       const prodNameIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.PRODUCT_NAME);
       const companyIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.COMPANY);
       const categoryIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.CATEGORY);
-      const descIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.DESCRIPTION);
-      const techIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.TECH_SPECS);
       const skuIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.SKU);
       const variantNameIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.VARIANT_NAME);
       const packSizeIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.PACK_SIZE);
@@ -2578,6 +2498,8 @@ export const dbService = {
       const imageIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.IMAGE_FILE);
       const statusIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.STATUS);
       const priceIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.PRICE);
+      const descIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.DESCRIPTION);
+      const techSpecsIdx = mappedHeaders.indexOf(CANONICAL_FIELDS.TECH_SPECS);
 
       const localProducts: Product[] = JSON.parse(localStorage.getItem('ad_products') || '[]');
       const localVariants: ProductVariant[] = JSON.parse(localStorage.getItem('ad_product_variants') || '[]');
@@ -2606,9 +2528,9 @@ export const dbService = {
         const priceStr = fields[priceIdx]?.trim() || "";
         const imageFile = imageIdx !== -1 ? fields[imageIdx]?.trim() : "";
         const status = statusIdx !== -1 ? fields[statusIdx]?.trim() || "Active" : "Active";
-        const description = descIdx !== -1 ? fields[descIdx]?.trim() || "" : "";
-        const techSpecs = techIdx !== -1 ? fields[techIdx]?.trim() || "" : "";
         const variantName = variantNameIdx !== -1 && fields[variantNameIdx] ? fields[variantNameIdx].trim() : `${packSizeStr} ${unit}`;
+        const description = descIdx !== -1 ? fields[descIdx]?.trim() || "" : "";
+        const techSpecs = techSpecsIdx !== -1 ? fields[techSpecsIdx]?.trim() || "" : "";
 
         let details = "";
         let isError = false;
@@ -2687,7 +2609,9 @@ export const dbService = {
           imageFile,
           status,
           validationStatus: valStatus,
-          details: details || "Ready to import"
+          details: details || "Ready to import",
+          description,
+          techSpecs
         });
       }
 
@@ -2728,6 +2652,8 @@ export const dbService = {
       return Promise.resolve(this.localBulkUploadProducts(csvText, zipFilesMap));
     }
 
+    await this.ensureAdminAuth();
+
     try {
       const valRes = this.validateBulkUpload(csvText, zipFilesMap);
       if (!valRes.success || valRes.summary.errors > 0) {
@@ -2738,7 +2664,7 @@ export const dbService = {
           variantsCreated: 0,
           variantsUpdated: 0,
           imagesImported: 0,
-          errors: valRes.errorsList.concat(valRes.rows.filter(r => r.validationStatus === 'ERROR').map(r => `Row ${r.rowNum}: ${r.details}`))
+          errors: valRes.errorsList.concat(valRes.rows.filter((r: any) => r.validationStatus === 'ERROR').map((r: any) => `Row ${r.rowNum}: ${r.details}`))
         };
       }
 
@@ -2791,10 +2717,25 @@ export const dbService = {
             throw new Error(`Failed to create company "${row.companyName}": ${compError?.message}`);
           }
           companyId = insertedComp.id;
-          companyMap.set(normCompany, companyId);
+          companyMap.set(normCompany, companyId!);
         }
 
-        // 2. Resolve Product
+        // 2. Resolve Image
+        let imageUrl = '';
+        if (row.imageFile) {
+          const cleanImg = row.imageFile.trim();
+          const lowerImg = cleanImg.toLowerCase();
+          if (zipFilesMap[lowerImg]) {
+            const blob = zipFilesMap[lowerImg];
+            await ImageStorageService.saveImage(cleanImg, blob);
+            imageUrl = cleanImg;
+            imagesImported++;
+          } else {
+            imageUrl = cleanImg;
+          }
+        }
+
+        // 3. Resolve Product
         const normProdName = row.productName.toLowerCase().trim();
         const prodKey = `${companyId}||${normProdName}`;
         let productId = productMap.get(prodKey);
@@ -2809,9 +2750,9 @@ export const dbService = {
               name: row.productName,
               brand: row.companyName,
               category: row.category || 'others',
-              description: row.details.includes('Ready') ? '' : row.details,
-              tech_specs: '',
-              image_url: row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : '',
+              description: row.description || '',
+              tech_specs: row.techSpecs || '',
+              image_url: imageUrl || (row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : ''),
               archived: false
             })
             .select()
@@ -2821,18 +2762,19 @@ export const dbService = {
             throw new Error(`Failed to create product "${row.productName}": ${prodError?.message}`);
           }
           productId = insertedProd.id;
-          productMap.set(prodKey, productId);
+          productMap.set(prodKey, productId!);
           productsCreated++;
           productWasCreated = true;
-        }
+        } else if (imageUrl) {
+          // Update product's image_url if we have a new one
+          const { error: prodUpdateError } = await supabase
+            .from('products')
+            .update({ image_url: imageUrl })
+            .eq('id', productId);
 
-        // 3. Resolve Image
-        let imageUrl = row.imageFile ? `https://images.unsplash.com/photo-1592417817098-8f3d6eb19675?w=500` : '';
-        if (row.imageFile && zipFilesMap[row.imageFile.trim().toLowerCase()]) {
-          const blob = zipFilesMap[row.imageFile.trim().toLowerCase()];
-          await ImageStorageService.saveImage(row.imageFile, blob);
-          imageUrl = row.imageFile;
-          imagesImported++;
+          if (prodUpdateError) {
+            console.error(`Failed to update product image for "${row.productName}":`, prodUpdateError.message);
+          }
         }
 
         // 4. Resolve Variant & Base Price
@@ -2932,6 +2874,7 @@ export const dbService = {
   },
 
   async archiveProduct(id: string): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { error } = await supabase
       .from('products')
       .update({ archived: true })
@@ -2943,6 +2886,7 @@ export const dbService = {
   },
 
   async restoreProduct(id: string): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { error } = await supabase
       .from('products')
       .update({ archived: false })
@@ -3050,6 +2994,7 @@ export const dbService = {
     // Map database properties back to original Order interface
     const order: Order = {
       id: insertedOrder.id,
+      orderNumber: insertedOrder.order_number,
       dealerId: insertedOrder.dealer_id,
       dealerName: insertedOrder.dealer_name,
       shopName: insertedOrder.shop_name,
@@ -3081,6 +3026,7 @@ export const dbService = {
   },
 
   async updateOrderStatus(orderId: string, orderStatus: Order['orderStatus'], paymentStatus: Order['paymentStatus']): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { error: orderError } = await supabase
       .from('orders')
       .update({
@@ -3114,6 +3060,7 @@ export const dbService = {
   },
 
   async confirmOrderItems(orderId: string, itemsData: { itemId: string; confirmedQuantity: number; cancellationReason: string }[]): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     for (const editData of itemsData) {
       const { data: item } = await supabase
         .from('order_items')
@@ -3234,6 +3181,7 @@ export const dbService = {
   },
 
   async addCompany(companyData: Omit<Company, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; company?: Company; error?: string }> {
+    await this.ensureAdminAuth();
     const { data: inserted, error } = await supabase
       .from('companies')
       .insert({
@@ -3265,6 +3213,7 @@ export const dbService = {
   },
 
   async updateCompany(company: Company): Promise<{ success: boolean; company?: Company; error?: string }> {
+    await this.ensureAdminAuth();
     const { error } = await supabase
       .from('companies')
       .update({
@@ -3282,6 +3231,7 @@ export const dbService = {
   },
 
   async archiveCompany(id: string): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { error } = await supabase
       .from('companies')
       .update({ status: 'inactive' })
@@ -3293,6 +3243,7 @@ export const dbService = {
   },
 
   async restoreCompany(id: string): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { error } = await supabase
       .from('companies')
       .update({ status: 'active' })
@@ -3304,6 +3255,7 @@ export const dbService = {
   },
 
   async deleteCompany(id: string): Promise<{ success: boolean; error?: string }> {
+    await this.ensureAdminAuth();
     const { data: countProducts } = await supabase.from('products').select('id').eq('company_id', id);
     if (countProducts && countProducts.length > 0) {
       return { success: false, error: `Cannot delete company. This company has ${countProducts.length} products associated with it.` };

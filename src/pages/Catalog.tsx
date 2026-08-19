@@ -156,20 +156,20 @@ export const Catalog: React.FC = () => {
                     }}
                     className="flex flex-col items-center w-[60px] flex-shrink-0 cursor-pointer focus:outline-none"
                   >
-                    <div className={`w-[44px] h-[44px] rounded-full flex items-center justify-center bg-white shadow-xs border transition-all duration-200 ${
+                    <div className={`w-[52px] h-[52px] rounded-full flex items-center justify-center bg-white shadow-xs border transition-all duration-200 ${
                       isSelected ? 'border-2 border-[#12873A] ring-4 ring-green-50' : 'border-slate-200 hover:border-slate-300'
                     }`}>
                       {comp.logo && !logoErrors[comp.id] ? (
-                        <div className="w-7 h-7 flex items-center justify-center overflow-hidden">
+                        <div className="w-[42px] h-[42px] flex items-center justify-center overflow-hidden">
                           <img 
                             src={comp.logo} 
                             alt={comp.name} 
-                            className="max-h-full max-w-full object-contain rounded-full" 
+                            className="max-h-full max-w-full object-contain" 
                             onError={() => setLogoErrors(prev => ({ ...prev, [comp.id]: true }))}
                           />
                         </div>
                       ) : (
-                        <div className="w-7 h-7 rounded-full bg-green-50 text-[#12873A] flex items-center justify-center font-bold text-[10px] uppercase">
+                        <div className="w-10 h-10 rounded-full bg-green-50 text-[#12873A] flex items-center justify-center font-bold text-xs uppercase">
                           {comp.name.slice(0, 2)}
                         </div>
                       )}
@@ -188,7 +188,7 @@ export const Catalog: React.FC = () => {
                   onClick={() => setView('all_companies')}
                   className="flex flex-col items-center w-[60px] flex-shrink-0 cursor-pointer focus:outline-none"
                 >
-                  <div className="w-[44px] h-[44px] rounded-full border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 hover:border-[#12873A] hover:text-[#12873A] hover:bg-green-50 transition-all shadow-xs">
+                  <div className="w-[52px] h-[52px] rounded-full border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 hover:border-[#12873A] hover:text-[#12873A] hover:bg-green-50 transition-all shadow-xs">
                     <span className="text-lg font-bold leading-none">+</span>
                   </div>
                   <span className="text-[12px] font-semibold text-slate-500 text-center truncate w-full mt-1.5 leading-tight">

@@ -131,7 +131,7 @@ export const OrderHistory: React.FC = () => {
     });
 
     const message = `*ORDER DETAILS SUMMARY* 🌾\n\n` +
-      `*Order No:* ${order.id}\n` +
+      `*Order No:* ${order.orderNumber || order.id}\n` +
       `*Dealer:* ${order.dealerName}\n` +
       `*Shop:* ${order.shopName}\n` +
       `*Date:* ${order.date}\n\n` +
@@ -184,7 +184,7 @@ export const OrderHistory: React.FC = () => {
       doc.text(`Payment Status:`, 15, 74);
       
       doc.setFont('Helvetica', 'normal');
-      doc.text(order.id, 50, 56);
+      doc.text(order.orderNumber || order.id, 50, 56);
       doc.text(order.date, 50, 62);
       doc.text(order.paymentMethod === 'pay_now' ? 'Pay Now (UPI)' : 'Pay Later', 50, 68);
       doc.text(order.paymentStatus === 'paid' ? 'Paid' : 'Payment Pending', 50, 74);
@@ -250,7 +250,7 @@ export const OrderHistory: React.FC = () => {
       doc.setFont('Helvetica', 'normal');
       doc.text("Note: This is an automatically generated electronic order receipt.", 15, 275);
       
-      doc.save(`Shubham_Krishi_Sewa_Kendra_Order_Summary_${order.id}.pdf`);
+      doc.save(`Shubham_Krishi_Sewa_Kendra_Order_Summary_${order.orderNumber || order.id}.pdf`);
     } catch (err) {
       console.error(err);
       alert("Error printing PDF");
@@ -321,7 +321,7 @@ export const OrderHistory: React.FC = () => {
               {/* Header: ID & Status */}
               <div className="flex justify-between items-center">
                 <span className="font-mono font-black text-sm text-[#12873A]">
-                  {order.id}
+                  {order.orderNumber || order.id}
                 </span>
                 <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${getOrderStatusColor(order.orderStatus)}`}>
                   {getStatusText(order.orderStatus).toUpperCase()}
@@ -394,7 +394,7 @@ export const OrderHistory: React.FC = () => {
               <div>
                 <h3 className="font-bold text-slate-800 text-sm flex items-center">
                   <span>Order Details</span>
-                  <span className="font-mono text-[#12873A] ml-1.5 font-extrabold">{selectedOrder.id}</span>
+                  <span className="font-mono text-[#12873A] ml-1.5 font-extrabold">{selectedOrder.orderNumber || selectedOrder.id}</span>
                 </h3>
                 <p className="text-[10px] text-slate-450 font-medium">Placed on {selectedOrder.date}</p>
               </div>

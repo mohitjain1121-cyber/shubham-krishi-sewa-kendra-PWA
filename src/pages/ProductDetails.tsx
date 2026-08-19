@@ -73,7 +73,7 @@ export const ProductDetails: React.FC = () => {
         <SafeImage
           src={product.imageUrl}
           alt={product.name}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain p-4 bg-white"
           brand={product.brand}
         />
         <div 
@@ -153,10 +153,10 @@ export const ProductDetails: React.FC = () => {
                       setSelectedVariant(v);
                       setQuantity(1);
                     }}
-                    className={`px-4.5 h-[38px] rounded-xl text-xs font-semibold transition border flex items-center justify-center space-x-1.5 cursor-pointer ${
+                    className={`px-4 h-[38px] rounded-xl text-xs font-semibold transition border flex items-center justify-center space-x-1.5 cursor-pointer ${
                       isSelected
                         ? 'border-2 border-[#12873A] bg-green-50 text-[#12873A] font-bold shadow-xs'
-                        : 'bg-white text-slate-650 border-slate-200 hover:border-slate-350'
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
                     }`}
                   >
                     <span>{v.packSize} {v.unit}</span>
@@ -204,24 +204,30 @@ export const ProductDetails: React.FC = () => {
         </div>
 
         {/* Description & Technical Specifications */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-4 text-xs">
-          <div>
-            <h3 className="text-slate-800 font-bold text-sm border-b border-slate-100 pb-2 mb-2 flex items-center">
-              <FileText className="w-4 h-4 text-[#12873A] mr-1.5" />
-              <span>Product Description</span>
-            </h3>
-            <p className="text-slate-650 leading-relaxed font-medium">{product.description}</p>
-          </div>
+        {(product.description || product.techSpecs) && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-4 text-xs">
+            {product.description && (
+              <div>
+                <h3 className="text-slate-800 font-bold text-sm border-b border-slate-100 pb-2 mb-2 flex items-center">
+                  <FileText className="w-4 h-4 text-[#12873A] mr-1.5" />
+                  <span>Product Description</span>
+                </h3>
+                <p className="text-slate-650 leading-relaxed font-medium">{product.description}</p>
+              </div>
+            )}
 
-          <div>
-            <h3 className="text-slate-800 font-bold text-sm border-b border-slate-100 pb-2 mb-2">
-              Technical Specifications
-            </h3>
-            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-150 font-mono text-[11px] text-slate-700 leading-normal">
-              {product.techSpecs}
-            </div>
+            {product.techSpecs && (
+              <div>
+                <h3 className="text-slate-800 font-bold text-sm border-b border-slate-100 pb-2 mb-2">
+                  Technical Specifications
+                </h3>
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-150 font-mono text-[11px] text-slate-700 leading-normal">
+                  {product.techSpecs}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Bottom Sticky Action Button for checkout */}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Leaf } from 'lucide-react';
 import { ImageStorageService } from '../services/db';
+import { getProductImageUrl } from '../config/r2';
 
 interface SafeImageProps {
   src: string;
@@ -10,6 +11,9 @@ interface SafeImageProps {
 }
 
 export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', brand = 'Agro' }) => {
+  // Resolve image source using centralized helper first (resolves R2 paths to absolute URLs)
+  const resolvedImageSrc = getProductImageUrl(src);
+
   const isDirectUrl = (url: string): boolean => {
     if (!url) return false;
     return (
@@ -23,27 +27,27 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
   };
 
   const [resolvedSrc, setResolvedSrc] = useState<string>(() => {
-    return isDirectUrl(src) ? src : '';
+    return isDirectUrl(resolvedImageSrc) ? resolvedImageSrc : '';
   });
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     let active = true;
     
-    if (!src) {
+    if (!resolvedImageSrc) {
       setResolvedSrc('');
       return;
     }
     
-    // Check if src is directly loadable
-    if (isDirectUrl(src)) {
-      setResolvedSrc(src);
+    // Check if resolvedImageSrc is directly loadable
+    if (isDirectUrl(resolvedImageSrc)) {
+      setResolvedSrc(resolvedImageSrc);
       setHasError(false);
       return;
     }
     
     // Retrieve from IndexedDB locally
-    ImageStorageService.getImageAsDataUrl(src)
+    ImageStorageService.getImageAsDataUrl(resolvedImageSrc)
       .then(dataUrl => {
         if (active) {
           if (dataUrl) {
@@ -63,7 +67,7 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
     return () => {
       active = false;
     };
-  }, [src]);
+  }, [resolvedImageSrc]);
 
   if (hasError || !src || !resolvedSrc) {
     return (

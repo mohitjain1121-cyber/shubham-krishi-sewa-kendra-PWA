@@ -24,7 +24,7 @@ export const OrderConfirmation: React.FC = () => {
     });
 
     const message = `*NEW ORDER SUBMITTED* 🌾\n\n` +
-      `*Order No:* ${activeOrder.id}\n` +
+      `*Order No:* ${activeOrder.orderNumber || activeOrder.id}\n` +
       `*Dealer:* ${activeOrder.dealerName}\n` +
       `*Shop:* ${activeOrder.shopName}\n` +
       `*Date:* ${activeOrder.date}\n\n` +
@@ -85,7 +85,7 @@ export const OrderConfirmation: React.FC = () => {
       doc.text(`Payment Status:`, 15, 74);
       
       doc.setFont('Helvetica', 'normal');
-      doc.text(activeOrder.id, 50, 56);
+      doc.text(activeOrder.orderNumber || activeOrder.id, 50, 56);
       doc.text(activeOrder.date, 50, 62);
       doc.text(activeOrder.paymentMethod === 'pay_now' ? 'Pay Now (UPI)' : 'Pay Later', 50, 68);
       doc.text(activeOrder.paymentStatus === 'paid' ? 'Paid' : 'Payment Pending', 50, 74);
@@ -161,7 +161,7 @@ export const OrderConfirmation: React.FC = () => {
       doc.setFont('Helvetica', 'normal');
       doc.text("Note: This is an automatically generated electronic order receipt. For query, contact wholesale helpline.", 15, 275);
       
-      doc.save(`Shubham_Krishi_Sewa_Kendra_Order_Summary_${activeOrder.id}.pdf`);
+      doc.save(`Shubham_Krishi_Sewa_Kendra_Order_Summary_${activeOrder.orderNumber || activeOrder.id}.pdf`);
     } catch (err) {
       console.error("PDF generation failed:", err);
       alert("Error generating PDF. Please check file configurations.");
@@ -189,7 +189,7 @@ export const OrderConfirmation: React.FC = () => {
         <div className="bg-slate-50 rounded-2xl p-4 border border-slate-150 text-left text-xs space-y-3.5">
           <div className="flex justify-between items-center border-b border-slate-200 pb-2 font-bold text-slate-850">
             <span>Order Reference</span>
-            <span className="font-mono text-[#12873A] font-extrabold">{activeOrder.id}</span>
+            <span className="font-mono text-[#12873A] font-extrabold">{activeOrder.orderNumber || activeOrder.id}</span>
           </div>
 
           {/* Product lines */}
