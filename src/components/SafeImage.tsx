@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Leaf } from 'lucide-react';
 import { ImageStorageService } from '../services/db';
-import { getProductImageUrl } from '../config/r2';
+import { getProductImageUrl, R2_PUBLIC_URL } from '../config/r2';
 
 interface SafeImageProps {
   src: string;
@@ -30,6 +30,7 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
     return isDirectUrl(resolvedImageSrc) ? resolvedImageSrc : '';
   });
   const [hasError, setHasError] = useState(false);
+  const [fallbackAttempt, setFallbackAttempt] = useState<number>(0);
 
   useEffect(() => {
     let active = true;
@@ -54,13 +55,20 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
             setResolvedSrc(dataUrl);
             setHasError(false);
           } else {
-            setHasError(true);
+            // Fallback to Cloudflare R2 products/ path if not found in local IndexedDB
+            const cleanUrl = resolvedImageSrc.trim();
+            const normalizedBase = R2_PUBLIC_URL.endsWith('/') ? R2_PUBLIC_URL.slice(0, -1) : R2_PUBLIC_URL;
+            setResolvedSrc(`${normalizedBase}/products/${cleanUrl}`);
+            setHasError(false);
           }
         }
       })
       .catch(() => {
         if (active) {
-          setHasError(true);
+          const cleanUrl = resolvedImageSrc.trim();
+          const normalizedBase = R2_PUBLIC_URL.endsWith('/') ? R2_PUBLIC_URL.slice(0, -1) : R2_PUBLIC_URL;
+          setResolvedSrc(`${normalizedBase}/products/${cleanUrl}`);
+          setHasError(false);
         }
       });
 
@@ -68,6 +76,18 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
       active = false;
     };
   }, [resolvedImageSrc]);
+
+  const handleImageError = () => {
+    if (fallbackAttempt === 0 && !isDirectUrl(src)) {
+      // If products/ prefix fallback failed, try the bucket root next
+      const cleanSrc = src.trim();
+      const normalizedBase = R2_PUBLIC_URL.endsWith('/') ? R2_PUBLIC_URL.slice(0, -1) : R2_PUBLIC_URL;
+      setResolvedSrc(`${normalizedBase}/${cleanSrc}`);
+      setFallbackAttempt(1);
+    } else {
+      setHasError(true);
+    }
+  };
 
   if (hasError || !src || !resolvedSrc) {
     return (
@@ -85,7 +105,7 @@ export const SafeImage: React.FC<SafeImageProps> = ({ src, alt, className = '', 
       src={resolvedSrc}
       alt={alt}
       className={className}
-      onError={() => setHasError(true)}
+      onError={handleImageError}
       loading="lazy"
     />
   );
