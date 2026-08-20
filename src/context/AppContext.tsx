@@ -111,6 +111,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     initAndSync();
   }, []);
 
+  // Sync view changes to browser history
+  useEffect(() => {
+    if (currentView === 'splash') return;
+
+    const currentState = window.history.state;
+    const targetState = {
+      view: currentView,
+      productId: selectedProductId,
+      companyId: selectedCompanyId,
+    };
+
+    // Replace the history state if it's the initial/splash state, otherwise push it
+    if (!currentState) {
+      window.history.replaceState(targetState, '');
+    } else if (currentState.view === 'splash') {
+      window.history.replaceState(targetState, '');
+    } else if (
+      currentState.view !== targetState.view ||
+      currentState.productId !== targetState.productId ||
+      currentState.companyId !== targetState.companyId
+    ) {
+      window.history.pushState(targetState, '');
+    }
+  }, [currentView, selectedProductId, selectedCompanyId]);
+
+  // Listen to the back button event (popstate)
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state) {
+        const { view, productId, companyId } = event.state;
+        setSelectedProductId(productId || null);
+        setSelectedCompanyId(companyId || null);
+        setViewInternal(view || 'catalog');
+      } else {
+        // Fallback to catalog if no history state is found
+        setSelectedProductId(null);
+        setSelectedCompanyId(null);
+        setViewInternal('catalog');
+      }
+    };
+
+    // Define initial baseline state so the first page isn't empty in history
+    if (!window.history.state) {
+      window.history.replaceState({
+        view: currentView,
+        productId: selectedProductId,
+        companyId: selectedCompanyId
+      }, '');
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentView, selectedProductId, selectedCompanyId]);
 
   const setView = (view: ViewType) => {
     // Reset view specific filters if changing tabs
