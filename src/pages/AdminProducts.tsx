@@ -5,7 +5,10 @@ import { Search, Plus, Archive, RefreshCcw, Edit2, FileUp, X, Download, CheckCir
 import { SafeImage } from '../components/SafeImage';
 import JSZip from 'jszip';
 
+import { useApp } from '../context/AppContext';
+
 export const AdminProducts: React.FC = () => {
+  const { syncVersion } = useApp();
   const [products, setProducts] = useState<Product[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [migrating, setMigrating] = useState(false);
@@ -73,7 +76,7 @@ export const AdminProducts: React.FC = () => {
   useEffect(() => {
     loadProducts();
     setCompanies(dbService.getCompanies(true)); // load all companies
-  }, []);
+  }, [syncVersion]);
 
   const openAddForm = () => {
     setEditProduct(null);

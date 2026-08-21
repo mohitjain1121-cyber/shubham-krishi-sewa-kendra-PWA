@@ -6,7 +6,7 @@ import { ProductCard } from '../components/ProductCard';
 import { ChevronLeft, SlidersHorizontal } from 'lucide-react';
 
 export const CompanyDetails: React.FC = () => {
-  const { selectedCompanyId, setView } = useApp();
+  const { selectedCompanyId, setView, syncVersion } = useApp();
   const [company, setCompany] = useState<Company | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>(['All']);
@@ -33,7 +33,7 @@ export const CompanyDetails: React.FC = () => {
       setSelectedCategory('All');
       setLogoError(false);
     }
-  }, [selectedCompanyId]);
+  }, [selectedCompanyId, syncVersion]);
 
   if (!company) {
     return (

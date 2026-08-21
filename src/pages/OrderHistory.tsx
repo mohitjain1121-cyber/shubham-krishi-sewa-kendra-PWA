@@ -9,7 +9,7 @@ import { DeliveryChallanComponent, downloadChallanPDF } from '../components/Deli
 import { BUSINESS_CONFIG, BUSINESS_INFO } from '../config/business';
 
 export const OrderHistory: React.FC = () => {
-  const { user, repeatOrder, setView } = useApp();
+  const { user, repeatOrder, setView, syncVersion } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [repeatResult, setRepeatResult] = useState<{ added: number; unavailable: number } | null>(null);
@@ -28,7 +28,7 @@ export const OrderHistory: React.FC = () => {
       const list = dbService.getOrders(user.id, user.role);
       setOrders(list);
     }
-  }, [user]);
+  }, [user, syncVersion]);
 
   const handlePrintChallan = (challan: any) => {
     if (isPrinting) return;

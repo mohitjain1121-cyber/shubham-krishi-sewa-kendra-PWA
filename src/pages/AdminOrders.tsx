@@ -7,7 +7,7 @@ import { Search, X, User, MapPin, CreditCard, ChevronRight, Phone, Mail, FileTex
 import { DeliveryChallanComponent, downloadChallanPDF } from '../components/DeliveryChallan';
 
 export const AdminOrders: React.FC = () => {
-  const { selectedOrderId, selectOrder } = useApp();
+  const { selectedOrderId, selectOrder, syncVersion } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -174,7 +174,7 @@ export const AdminOrders: React.FC = () => {
         setPaymentStatus(match.paymentStatus);
       }
     }
-  }, [selectedOrderId]);
+  }, [selectedOrderId, syncVersion]);
 
   // Clean up print state after native print dialog finishes/closes
   const handlePrintChallan = (challan: any) => {

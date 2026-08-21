@@ -3,7 +3,10 @@ import { dbService, getCompanyPlaceholderLogo } from '../services/db';
 import type { Company, Product } from '../services/db';
 import { Search, Plus, Trash2, ShieldAlert, X, Building2, CheckCircle } from 'lucide-react';
 
+import { useApp } from '../context/AppContext';
+
 export const AdminCompanies: React.FC = () => {
+  const { syncVersion } = useApp();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,7 +43,7 @@ export const AdminCompanies: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [syncVersion]);
 
   const getProductCount = (compId: string) => {
     return products.filter(p => p.companyId === compId).length;

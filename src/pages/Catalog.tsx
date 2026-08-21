@@ -14,7 +14,8 @@ export const Catalog: React.FC = () => {
     setSelectedCategory,
     setView,
     selectedCompanyFilter,
-    setSelectedCompanyFilter
+    setSelectedCompanyFilter,
+    syncVersion
   } = useApp();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>(['All']);
@@ -34,7 +35,7 @@ export const Catalog: React.FC = () => {
     // Fetch active companies
     const comps = dbService.getCompanies(false);
     setCompanies(comps);
-  }, []);
+  }, [syncVersion]);
 
   // Filtering products
   const filteredProducts = products.filter(product => {

@@ -5,7 +5,7 @@ import type { Company, Product } from '../services/db';
 import { ChevronLeft, Building2, Search } from 'lucide-react';
 
 export const AllCompanies: React.FC = () => {
-  const { setView, setSelectedCompanyFilter } = useApp();
+  const { setView, setSelectedCompanyFilter, syncVersion } = useApp();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -16,7 +16,7 @@ export const AllCompanies: React.FC = () => {
     setCompanies(dbService.getCompanies(false));
     // Load products to compute count
     setProducts(dbService.getProducts(false));
-  }, []);
+  }, [syncVersion]);
 
   const getProductCount = (compId: string) => {
     return products.filter(p => p.companyId === compId).length;

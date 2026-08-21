@@ -2935,22 +2935,12 @@ export const dbService = {
     subtotal: number;
     total: number;
   }, cartItems: { product: Product; variant: ProductVariant; quantity: number }[]): Promise<{ success: boolean; order?: Order; error?: string }> {
-    
-    const { data: countData, error: countError } = await supabase
-      .from('orders')
-      .select('id', { count: 'exact' });
-
-    if (countError) return { success: false, error: "Failed to generate order number" };
-    
-    const nextNum = (countData?.length || 0) + 1;
-    const orderNumber = 'ORD-' + String(1000 + nextNum);
     const paymentStatus = orderData.paymentMethod === 'pay_now' ? 'paid' : 'pending';
 
-    // Insert order header
+    // Insert order header (leaving order_number to be generated automatically by the DB sequence)
     const { data: insertedOrder, error: orderError } = await supabase
       .from('orders')
       .insert({
-        order_number: orderNumber,
         dealer_id: orderData.dealerId,
         dealer_name: orderData.dealerName,
         shop_name: orderData.shopName,
@@ -2964,7 +2954,7 @@ export const dbService = {
       .single();
 
     if (orderError || !insertedOrder) {
-      return { success: false, error: "Failed to place order header: " + orderError?.message };
+      return { success: false, error: "Failed to place order header: " + (orderError?.message || "Unknown error") };
     }
 
     // Insert order items
@@ -3447,10 +3437,6 @@ export const dbService = {
       return null;
     }
 
-    const { data: countData } = await supabase.from('delivery_challans').select('id');
-    const nextNum = (countData?.length || 0) + 1;
-    const challanNumber = 'DC-' + String(nextNum).padStart(5, '0');
-
     const businessSnapshot = this.getSettings();
     const dealerDetails = this.getDealerDetails(order.dealer_id);
     const dealerSnapshot = dealerDetails || {
@@ -3483,10 +3469,10 @@ export const dbService = {
         cancellation_reason: item.cancellation_reason || ''
       }));
 
+    // Insert delivery challan (leaving challan_number to be generated automatically by the DB sequence)
     const { data: insertedChallan, error: challanError } = await supabase
       .from('delivery_challans')
       .insert({
-        challan_number: challanNumber,
         order_id: orderId,
         dealer_id: order.dealer_id,
         hamali: Number(charges?.hamali || 0),

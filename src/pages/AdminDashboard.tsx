@@ -5,7 +5,7 @@ import type { Order, Product, UserProfile } from '../services/db';
 import { ClipboardList, Database, Users, IndianRupee, Clock, ArrowRight, Eye } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
-  const { setView, selectOrder } = useApp();
+  const { setView, selectOrder, syncVersion } = useApp();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [dealers, setDealers] = useState<UserProfile[]>([]);
@@ -17,7 +17,7 @@ export const AdminDashboard: React.FC = () => {
       setProducts(dbService.getProducts(true));
       setDealers(dbService.getDealers());
     }
-  }, []);
+  }, [syncVersion]);
 
   // Compute metrics dynamically from the simulated DB
   const totalProducts = products.filter(p => !p.archived).length;

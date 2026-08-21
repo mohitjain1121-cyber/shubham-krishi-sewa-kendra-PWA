@@ -40,6 +40,7 @@ interface AppContextType {
   selectedCategory: string;
   selectedCompanyFilter: string;
   settings: SystemSettings;
+  syncVersion: number;
   
   // Auth actions
   login: (loginVal: string, passwordVal?: string) => Promise<{ success: boolean; error?: string }>;
@@ -86,27 +87,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState<string>('');
   const [settings, setSettings] = useState<SystemSettings>(dbService.getSettings());
+  const [syncVersion, setSyncVersion] = useState<number>(0);
 
   // Check active session on startup and sync database
   useEffect(() => {
     const initAndSync = async () => {
-      await dbService.syncFromSupabase();
+      // 1. Instantly check current cached session and set user
       const session = dbService.getCurrentSession();
       if (session) {
         setUser(session);
-        // Wait for splash before redirecting
-        setTimeout(() => {
-          if (session.role === 'admin') {
-            setViewInternal('admin_dashboard');
-          } else {
-            setViewInternal('catalog');
-          }
-        }, 2000);
-      } else {
-        setTimeout(() => {
-          setViewInternal('catalog');
-        }, 2500);
       }
+
+      // 2. Schedule splash redirect with a small delay so splash has a clean, fast feel (e.g. 800ms)
+      const redirectTimeout = setTimeout(() => {
+        if (session && session.role === 'admin') {
+          setViewInternal('admin_dashboard');
+        } else {
+          setViewInternal('catalog');
+        }
+      }, 800);
+
+      // 3. Run sync from Supabase in background
+      try {
+        await dbService.syncFromSupabase();
+        setSyncVersion(prev => prev + 1);
+        setSettings(dbService.getSettings()); // Update settings state with synced system settings
+      } catch (err) {
+        console.error("Background sync failed:", err);
+      }
+
+      return () => clearTimeout(redirectTimeout);
     };
     initAndSync();
   }, []);
@@ -341,6 +351,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         searchQuery,
         selectedCategory,
         settings,
+        syncVersion,
         login,
         register,
         logout,

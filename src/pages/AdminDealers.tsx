@@ -3,7 +3,10 @@ import { dbService } from '../services/db';
 import type { UserProfile, Order } from '../services/db';
 import { Search, X, User, Store, Smartphone, Mail, MapPin, Percent, Calendar, ClipboardList, Eye, ChevronRight } from 'lucide-react';
 
+import { useApp } from '../context/AppContext';
+
 export const AdminDealers: React.FC = () => {
+  const { syncVersion } = useApp();
   const [dealers, setDealers] = useState<UserProfile[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,7 +61,7 @@ export const AdminDealers: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [syncVersion]);
 
   const openDealerDetails = (dealer: UserProfile) => {
     setSelectedDealer(dealer);
