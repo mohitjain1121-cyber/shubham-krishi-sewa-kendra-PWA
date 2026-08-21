@@ -923,8 +923,23 @@ export const isSupabaseConfigured = (): boolean => {
   return url !== '' && key !== '' && !url.includes('your-project-id');
 };
 
+type SyncListener = () => void;
+let syncListeners: SyncListener[] = [];
+
 // Database Service Functions
 export const dbService = {
+  onSync(listener: SyncListener) {
+    syncListeners.push(listener);
+    return () => {
+      syncListeners = syncListeners.filter(l => l !== listener);
+    };
+  },
+
+  triggerSyncListeners() {
+    syncListeners.forEach(l => {
+      try { l(); } catch (e) { console.error(e); }
+    });
+  },
   async ensureAdminAuth(): Promise<void> {
     if (!isSupabaseConfigured()) return;
     try {
@@ -2040,6 +2055,7 @@ export const dbService = {
 
       localStorage.setItem('ad_product_variants', JSON.stringify(variantsWithPrices));
       console.log('[Sync] Local storage synchronized successfully with Supabase');
+      this.triggerSyncListeners();
     } catch (error) {
       console.warn('[Sync] Sync connection deferred (running offline):', error);
     }
@@ -2982,7 +2998,7 @@ export const dbService = {
       return { success: false, error: "Order placed but items failed: " + itemsError.message };
     }
 
-    await this.syncFromSupabase();
+    this.syncFromSupabase();
 
     // Map database properties back to original Order interface
     const order: Order = {
@@ -3048,7 +3064,7 @@ export const dbService = {
       await supabase.from('orders').update({ subtotal: 0, total: 0 }).eq('id', orderId);
     }
 
-    await this.syncFromSupabase();
+    this.syncFromSupabase();
     return { success: true };
   },
 
@@ -3112,7 +3128,7 @@ export const dbService = {
         .eq('id', orderId);
     }
 
-    await this.syncFromSupabase();
+    this.syncFromSupabase();
     return { success: true };
   },
 
@@ -3510,7 +3526,7 @@ export const dbService = {
 
     await this.updateOrderStatus(orderId, 'dispatched', order.payment_status);
 
-    await this.syncFromSupabase();
+    this.syncFromSupabase();
 
     return this.getDeliveryChallanByOrderId(orderId);
   }

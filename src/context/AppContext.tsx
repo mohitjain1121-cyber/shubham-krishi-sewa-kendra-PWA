@@ -121,6 +121,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     initAndSync();
   }, []);
 
+  // Listen to background database syncs to auto-update cache versions
+  useEffect(() => {
+    if (typeof dbService.onSync === 'function') {
+      return dbService.onSync(() => {
+        setSyncVersion(prev => prev + 1);
+        setSettings(dbService.getSettings());
+      });
+    }
+  }, []);
+
   // Sync view changes to browser history
   useEffect(() => {
     if (currentView === 'splash') return;
